@@ -1,6 +1,8 @@
 import pytest
+import requests
 from unittest.mock import Mock, patch
 
+from aissy.errors import ProviderUnavailableError
 from aissy.providers.ollama_provider import OllamaProvider
 
 
@@ -61,3 +63,8 @@ def test_provider_raises_error_when_ollama_fails(mock_post):
 
     with pytest.raises(Exception, match="Connection error"):
         provider.generate([{"role": "user", "content": "Oi!"}])
+
+
+@patch("aissy.providers.ollama_provider.requests.post")
+def test_provider_raises_unavailable_error_when_connection_fails(mock_post):
+    mock_post.side_effect
