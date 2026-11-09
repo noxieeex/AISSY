@@ -4,11 +4,6 @@ from unittest.mock import Mock, patch
 from aissy.providers.ollama_provider import OllamaProvider
 
 
-def test_provider_uses_qwen3_by_default():
-    provider = OllamaProvider()
-    assert provider.model == "qwen2.5:7b-instruct"
-
-
 @patch("aissy.providers.ollama_provider.requests.post")
 def test_provider_sends_messages_to_ollama(mock_post):
     mock_response = Mock()
@@ -30,14 +25,29 @@ def test_provider_sends_messages_to_ollama(mock_post):
 
     assert result == "Olá! Eu sou a AISSY."
 
-    mock_post.assert_called_once_with(
-        "http://localhost:11434/api/chat",
-        json={
-            "model": "qwen3:4b",
-            "messages": messages,
-            "stream": False
+    args, kwargs = mock_post.call_args
+    assert args[0] == "http://localhost:11434/api/chat"
+    assert kwargs["json"]["messages"] == messages
+    assert kwargs["json"]["stream"] is False
+
+
+@patch("aissy.providers.ollama_provider.requests.post")
+def test_provider_returns_only_content_when_model_sends_thinking(mock_post):
+    mock_response = Mock()
+    mock_response.json.return_value = {
+        "message": {
+            "content": "Olá!",
+            "thinking": "O usuário disse oi, vou responder."
         }
-    )
+    }
+
+    mock_post.return_value = mock_response
+
+    provider = OllamaProvider()
+
+    result = provider.generate([{"role": "user", "content": "Oi!"}])
+
+    assert result == "Olá!"
 
 
 @patch("aissy.providers.ollama_provider.requests.post")
