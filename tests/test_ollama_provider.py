@@ -6,7 +6,7 @@ from aissy.providers.ollama_provider import OllamaProvider
 
 def test_provider_uses_qwen3_by_default():
     provider = OllamaProvider()
-    assert provider.model == "qwen3:4b"
+    assert provider.model == "qwen2.5:7b-instruct"
 
 
 @patch("aissy.providers.ollama_provider.requests.post")
