@@ -401,3 +401,38 @@ def test_forget_request_does_not_delete_when_nothing_matches():
 
     assert "Não encontrei" in response
     assert conversation.long_term_memory.memories == []
+
+def test_date_question_is_answered_without_calling_the_llm():
+    conversation = Conversation("You are AISSY.")
+    fake_llm = FakeLLM()
+
+    response = conversation.send_message("Que dia é hoje?", fake_llm)
+
+    assert response.startswith("Hoje é")
+    assert len(fake_llm.calls) == 0
+
+
+def test_tomorrow_question_is_answered_without_calling_the_llm():
+    conversation = Conversation("You are AISSY.")
+    fake_llm = FakeLLM()
+
+    response = conversation.send_message("Que dia é amanhã?", fake_llm)
+
+    assert response.startswith("Amanhã será")
+    assert len(fake_llm.calls) == 0
+
+
+@pytest.mark.parametrize("message", [
+    "O que eu tenho pra fazer hoje?",
+    "Estou cansada hoje.",
+    "Em 3 dias tenho prova.",
+    "Que dia horrível hoje!",
+])
+def test_messages_that_only_mention_a_date_reach_the_llm(message):
+    conversation = Conversation("You are AISSY.")
+    fake_llm = FakeLLM()
+
+    response = conversation.send_message(message, fake_llm)
+
+    assert response == "Hello! Nice to meet you."
+    assert len(fake_llm.calls) == 1

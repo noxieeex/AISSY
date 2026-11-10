@@ -74,6 +74,21 @@ def get_relative_date_offset(message):
 
     return None
 
+def is_date_question(message):
+    """Detecta perguntas diretas sobre a data, em português."""
+    if not isinstance(message, str):
+        return False
+
+    text = message.lower()
+
+    patterns = (
+        r"\bque dia (?:é|foi|será|vai ser|da semana)\b",
+        r"\bqual (?:é )?a data\b",
+        r"\bqual (?:é )?o dia\b",
+        r"\bque data\b",
+    )
+
+    return any(re.search(pattern, text) for pattern in patterns)
 
 TOOL_DEFINITIONS = [
     {
