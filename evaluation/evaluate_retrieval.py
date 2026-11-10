@@ -10,6 +10,24 @@ THRESHOLDS = (0.0, 0.3, 0.4, 0.5, 0.6)
 TOP_K = 3
 
 
+class CachedEmbedder:
+    """Evita recalcular o embedding de um mesmo texto durante a avaliação."""
+
+    def __init__(self, embedder):
+        self.embedder = embedder
+        self.model = embedder.model
+        self.cache = {}
+
+    def embed(self, texts):
+        missing = [text for text in dict.fromkeys(texts) if text not in self.cache]
+
+        if missing:
+            for text, vector in zip(missing, self.embedder.embed(missing)):
+                self.cache[text] = vector
+
+        return [self.cache[text] for text in texts]
+
+
 def build_memory(database_path, embedder):
     memory = LongTermMemory(database_path, embedder=embedder)
     key_by_id = {}
@@ -53,7 +71,8 @@ def report(name, result):
     print(
         f"{name:<30} hit@1 {hit_1}/{with_answer}   "
         f"hit@3 {hit_3}/{with_answer}   "
-        f"falsos positivos {false_positives}/{without_answer}"
+        f"falsos positivos {false_positives}/{without_answer}",
+        flush=True,
     )
 
 
@@ -62,14 +81,18 @@ def main():
     parser.add_argument("--model", default="bge-m3")
     args = parser.parse_args()
 
-    embedder = OllamaEmbedder(model=args.model)
+    embedder = CachedEmbedder(OllamaEmbedder(model=args.model))
 
     with tempfile.TemporaryDirectory() as folder:
+        print("Carregando o modelo e indexando as memórias...", flush=True)
+
         memory, key_by_id = build_memory(Path(folder) / "eval.db", embedder)
+        memory.index_missing()
 
         print(
             f"Modelo: {args.model} | {len(MEMORIES)} memórias | "
-            f"{len(CASES)} perguntas\n"
+            f"{len(CASES)} perguntas\n",
+            flush=True,
         )
 
         report(

@@ -420,6 +420,51 @@ class Conversation:
 
             return "Não encontrei nenhuma memória correspondente."
 
+        self.pending_deletion = matches
+
+        if len(matches) == 1:
+            memory_content = matches[0]["content"]
+
+            if language == "en":
+                return (
+                    "Do you want me to delete this memory: "
+                    f'"{memory_content}"? Please answer yes or no.'
+                )
+
+            return (
+                "Você quer que eu exclua esta memória: "
+                f'"{memory_content}"? Responda sim ou não.'
+            )
+
+        options = "\n".join(
+            f"{index + 1}. {item['content']}"
+            for index, item in enumerate(matches)
+        )
+
+        if language == "en":
+            return (
+                "I found multiple matching memories. "
+                "Which one should I delete? Reply with its number:\n"
+                + options
+            )
+
+        return (
+            "Encontrei várias memórias correspondentes. "
+            "Qual delas você quer excluir? Responda com o número:\n"
+            + options
+        )
+
+        matches = self.long_term_memory.search_memories(
+            query,
+            limit=5,
+        )
+
+        if not matches:
+            if language == "en":
+                return "I couldn't find a matching memory to forget."
+
+            return "Não encontrei nenhuma memória correspondente."
+
         if len(matches) == 1:
             memory_id = matches[0]["id"]
             deleted = self.long_term_memory.delete_memory(memory_id)

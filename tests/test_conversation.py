@@ -373,11 +373,11 @@ def test_remember_request_works_in_english():
     )
 
 
-def test_forget_request_deletes_matching_memory():
+def test_forget_request_asks_for_confirmation_before_deleting():
     conversation = Conversation("You are AISSY.")
     fake_llm = FakeLLM()
 
-    memory_id = conversation.long_term_memory.add_memory(
+    conversation.long_term_memory.add_memory(
         "User likes Python programming."
     )
 
@@ -386,8 +386,29 @@ def test_forget_request_deletes_matching_memory():
         fake_llm,
     )
 
-    assert "Excluí" in response
-    assert conversation.long_term_memory.delete_memory(memory_id) is False
+    assert "Responda sim ou não" in response
+    assert len(conversation.long_term_memory.memories) == 1
+
+    response = conversation.send_message("Sim", fake_llm)
+
+    assert "excluída" in response
+    assert conversation.long_term_memory.memories == []
+    assert len(fake_llm.calls) == 0
+
+
+def test_forget_request_is_cancelled_when_user_says_no():
+    conversation = Conversation("You are AISSY.")
+    fake_llm = FakeLLM()
+
+    conversation.long_term_memory.add_memory(
+        "User likes Python programming."
+    )
+
+    conversation.send_message("Esqueça que eu gosto de Python.", fake_llm)
+    response = conversation.send_message("Não", fake_llm)
+
+    assert "não vou excluir" in response.lower()
+    assert len(conversation.long_term_memory.memories) == 1
 
 
 def test_forget_request_does_not_delete_when_nothing_matches():

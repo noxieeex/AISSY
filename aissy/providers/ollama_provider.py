@@ -1,4 +1,3 @@
-
 import json
 from uuid import uuid4
 
@@ -8,8 +7,9 @@ from aissy.errors import ProviderUnavailableError
 
 
 class OllamaProvider:
-    def __init__(self, model="qwen2.5:7b-instruct"):
+    def __init__(self, model="qwen2.5:7b-instruct", timeout=120):
         self.model = model
+        self.timeout = timeout
         self.url = "http://localhost:11434/api/chat"
 
     def _prepare_messages(self, messages):
@@ -66,14 +66,20 @@ class OllamaProvider:
         try:
             response = requests.post(
                 self.url,
-                json=payload
+                json=payload,
+                timeout=self.timeout,
             )
-        except requests.ConnectionError as error:
+        except (requests.ConnectionError, requests.Timeout) as error:
             raise ProviderUnavailableError(
-                "Could not connect to Ollama."
+                "Could not reach Ollama (connection failed or timed out)."
             ) from error
 
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except requests.HTTPError as error:
+            raise ProviderUnavailableError(
+                f"Ollama returned an error: {error}"
+            ) from error
 
         return response.json()["message"]
 
