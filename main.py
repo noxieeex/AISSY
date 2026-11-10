@@ -1,6 +1,7 @@
-
 from aissy.conversation import Conversation
+from aissy.embeddings import OllamaEmbedder
 from aissy.errors import ProviderUnavailableError
+from aissy.long_term_memory import LongTermMemory
 from aissy.providers.ollama_provider import OllamaProvider
 
 
@@ -29,7 +30,8 @@ TOOL USAGE:
 """
 
 
-aissy = Conversation(SYSTEM_PROMPT)
+long_term_memory = LongTermMemory(embedder=OllamaEmbedder())
+aissy = Conversation(SYSTEM_PROMPT, long_term_memory=long_term_memory)
 llm = OllamaProvider()
 
 print("AISSY iniciada! Digite 'exit' para encerrar.\n")
@@ -41,7 +43,11 @@ while True:
         continue
 
     if user_input.lower() == "/new":
-        aissy = Conversation(SYSTEM_PROMPT, new_conversation=True)
+        aissy = Conversation(
+            SYSTEM_PROMPT,
+            new_conversation=True,
+            long_term_memory=long_term_memory,
+        )
         print("\nAISSY: Nova conversa iniciada! <3\n")
         continue
 

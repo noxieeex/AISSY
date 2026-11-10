@@ -120,10 +120,13 @@ class Conversation:
         return assistant_content
 
     def _retrieve_memories(self, content):
-        memories = self.long_term_memory.search_memories(
-            content,
-            limit=5,
+        retrieve = getattr(
+            self.long_term_memory,
+            "retrieve_memories",
+            self.long_term_memory.search_memories,
         )
+
+        memories = retrieve(content, limit=5)
 
         return [
             memory
