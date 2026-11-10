@@ -10,6 +10,7 @@ from aissy.tools import (
     TOOL_DEFINITIONS,
     execute_tool,
     get_relative_date_offset,
+    is_date_question,
 )
 
 
@@ -481,6 +482,9 @@ class Conversation:
         return results
 
     def _answer_with_relative_date(self, content, language):
+        if not is_date_question(content):
+            return None
+
         days_offset = get_relative_date_offset(content)
 
         if days_offset is None:
