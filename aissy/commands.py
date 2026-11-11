@@ -7,6 +7,7 @@ HELP_TEXT = (
     "/tarefas     lista as tarefas pendentes\n"
     "/feito N     marca a tarefa N como concluída\n"
     "/apagar N    apaga a tarefa N\n"
+    "/voz         liga ou desliga o modo voz\n"
     "/new         começa uma conversa nova\n"
     "exit         encerra"
 )

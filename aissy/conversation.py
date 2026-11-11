@@ -113,6 +113,13 @@ class Conversation:
 
         if saved_messages:
             self.messages = saved_messages
+
+            # Conversas antigas passam a usar o prompt de sistema atual.
+            if self.messages[0].get("role") == "system":
+                self.messages[0] = {
+                    "role": "system",
+                    "content": system_prompt,
+                }
         else:
             self.messages = [
                 {"role": "system", "content": system_prompt}

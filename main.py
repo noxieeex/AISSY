@@ -1,58 +1,25 @@
+import os
+import sys
 from datetime import datetime
 
 from aissy.briefing import build_briefing
 from aissy.commands import handle_command
-from aissy.conversation import Conversation
+from aissy.conversation import Conversation, detect_language
 from aissy.embeddings import OllamaEmbedder
 from aissy.errors import ProviderUnavailableError
 from aissy.long_term_memory import LongTermMemory
+from aissy.persona import build_system_prompt
 from aissy.providers.ollama_provider import OllamaProvider
 from aissy.tasks import TaskStore
 
 
-SYSTEM_PROMPT = """
-You are AISSY, a warm, playful and capable personal assistant.
+USER_NAME = "Ge"  # como a AISSY te chama
 
-LANGUAGE:
-- Always reply in the same language as the user's latest message.
-- Brazilian Portuguese is the default language.
-- Use English or Spanish when the user speaks them.
-- Never switch languages without the user doing so.
-
-PERSONALITY:
-- Talk like a close friend who is also very capable: relaxed, kind, a little playful.
-- Keep replies short by default (1 to 3 sentences). Go longer only when asked for detail.
-- Use at most one light emoji per message, like 💗, and not in every message.
-- Match the user's energy: cheerful when they are, gentle when they are tired.
-- Ask a short follow-up question when it helps the conversation flow.
-- Be honest: if you don't know something or a tool failed, say so.
-- Never claim to have done something you did not do.
-- Never invent facts about the user. Use only the memory notes and the conversation.
-
-TONE EXAMPLES (tone only, always reply in the user's language):
-- "oiii" -> "Oii! Como foi o seu dia? 💗"
-- "tô cansada" -> "Poxa, dia puxado? Quer desabafar ou prefere que eu te ajude a organizar o que falta?"
-- "how do I reverse a list in Python?" -> "Easy: my_list.reverse() changes it in place, or my_list[::-1] gives you a reversed copy."
-
-TOOL USAGE:
-- Use tools whenever accurate information is needed.
-- Always trust tool results over your own assumptions.
-- Never invent dates, weekdays or times.
-- Never expose raw tool arguments or technical details.
-
-TASKS AND REMINDERS:
-- When the user asks to be reminded of something or to add a to-do, call add_task. Never say a task was saved unless add_task succeeded.
-- If a day is mentioned (tomorrow, Friday), call get_date first and pass the resulting date as due.
-- When asked what is pending, call list_tasks and only report what it returns.
-- To finish a task, call complete_task with its id (use list_tasks if you don't know it).
-- If a tool returns an error, tell the user briefly and offer to try again.
-"""
-
-
-USER_NAME = None  # coloque seu nome aqui se quiser que a AISSY use na saudação
+SYSTEM_PROMPT = build_system_prompt(USER_NAME)
 
 long_term_memory = LongTermMemory(embedder=OllamaEmbedder())
 task_store = TaskStore()
+voice = None
 
 
 def new_conversation(fresh=False):
@@ -64,26 +31,82 @@ def new_conversation(fresh=False):
     )
 
 
-aissy = new_conversation()
-llm = OllamaProvider()
+def emit(text):
+    """Mostra a fala da AISSY e, no modo voz, também fala em voz alta."""
+    print(f"\nAISSY: {text}\n")
 
-# Abertura proativa: a AISSY começa mostrando o dia, sem precisar de modelo.
+    if voice is not None:
+        try:
+            voice.say(text, detect_language(text))
+        except Exception as error:
+            print(f"(não consegui falar em voz alta: {error})\n")
+
+
+def turn_voice_on():
+    global voice
+
+    try:
+        from aissy.voice import create_voice_session
+
+        voice = create_voice_session()
+    except ImportError:
+        print(
+            "\nAISSY: Faltam as bibliotecas de voz. Rode:\n"
+            "pip install -r requirements-voice.txt\n"
+        )
+        return
+
+    emit(
+        "Modo voz ligado! Aperte Enter sem digitar nada para falar, "
+        "ou escreva normalmente."
+    )
+
+
+aissy = new_conversation()
+llm = OllamaProvider(os.environ.get("AISSY_MODEL", "qwen2.5:7b-instruct"))
+
 print()
-print(f"AISSY: {build_briefing(task_store, datetime.now(), USER_NAME)}")
-print("\n(Digite /ajuda para ver os comandos.)\n")
+if "--voz" in sys.argv:
+    turn_voice_on()
+
+emit(build_briefing(task_store, datetime.now(), USER_NAME))
+print("(Digite /ajuda para ver os comandos.)\n")
 
 while True:
     user_input = input("You: ")
 
     if not user_input.strip():
-        continue
+        if voice is None:
+            continue
 
-    if user_input.lower().strip() == "/new":
+        try:
+            user_input = voice.listen()
+        except Exception as error:
+            print(f"\nAISSY: Erro com o microfone ou o modelo de voz: {error}\n")
+            continue
+
+        if not user_input:
+            print("\nAISSY: Não consegui ouvir nada. Tenta de novo? <3\n")
+            continue
+
+        print(f"You (voz): {user_input}")
+
+    command = user_input.lower().strip()
+
+    if command == "/new":
         aissy = new_conversation(fresh=True)
-        print("\nAISSY: Nova conversa iniciada! <3\n")
+        emit("Nova conversa iniciada! <3")
         continue
 
-    if user_input.lower().strip() == "exit":
+    if command == "/voz":
+        if voice is None:
+            turn_voice_on()
+        else:
+            voice = None
+            print("\nAISSY: Modo voz desligado.\n")
+        continue
+
+    if command == "exit":
         print("AISSY: Até mais! <3")
         break
 
@@ -95,17 +118,16 @@ while True:
     )
 
     if command_response is not None:
-        print(f"\nAISSY: {command_response}\n")
+        emit(command_response)
         continue
 
     try:
-        response = aissy.send_message(user_input, llm)
-        print(f"\nAISSY: {response}\n")
+        emit(aissy.send_message(user_input, llm))
 
     except ProviderUnavailableError:
-        print(
-            "\nAISSY: Não consegui me conectar ao Ollama. "
-            "Verifique se ele está aberto e tente novamente. <3\n"
+        emit(
+            "Não consegui me conectar ao Ollama. "
+            "Verifique se ele está aberto e tente novamente. <3"
         )
 
     except Exception as error:
