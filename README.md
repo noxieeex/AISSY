@@ -1,6 +1,6 @@
 # AISSY
 
-Assistente pessoal em Python, feita para rodar **localmente** (via Ollama), com conversa em português, inglês e espanhol, memória de longo prazo e uso de ferramentas (tool calling). É um projeto pessoal, em desenvolvimento contínuo.
+Assistente pessoal em Python, feita para rodar **localmente** (via Ollama), com conversa por texto ou voz, em português, inglês e espanhol, memória de longo prazo e uso de ferramentas (tool calling). É um projeto pessoal, em desenvolvimento contínuo.
 
 > Este README separa o que **existe e está testado**, o que está **em desenvolvimento** e o que é **apenas ideia**.
 
@@ -18,17 +18,19 @@ Assistente pessoal em Python, feita para rodar **localmente** (via Ollama), com 
 - Pedidos como "me lembra de X amanhã às 10h" são interpretados em código (data, hora e título), sem depender do modelo.
 - Erros de ferramentas voltam ao modelo como resultado, em vez de derrubar a conversa. A data e a hora atuais entram no contexto de cada resposta.
 - Mensagem amigável quando o Ollama está fora do ar.
+- Modo voz opcional e 100% local: reconhecimento de fala com `faster-whisper` e fala com as vozes do Windows (`pyttsx3`), preferindo vozes femininas. Enter começa a gravação e Enter encerra. A lógica é testada com peças falsas; o áudio em si depende de microfone e das vozes instaladas, e foi validado manualmente.
+- Persona definida em `aissy/persona.py` e conferida por um script (`evaluation/persona_check.py`) que roda 11 frases no modelo e verifica idioma, frases de chatbot genérico, forma feminina, tamanho da resposta e emojis. Com `qwen2.5:7b-instruct` o resultado foi 9/11, e varia entre execuções.
 - Script de avaliação que compara busca por palavras, busca semântica e busca híbrida em um conjunto de perguntas.
 - Suíte de testes automatizados com `pytest`, usando LLM e embedder falsos, sem depender de GPU.
 
 ### Em desenvolvimento
 
-- Persona e tom de voz da AISSY (ajuste fino).
+- Ajuste fino da persona: o modelo de 7B ainda escorrega para frases genéricas e erros de gramática.
 - Notificações de lembretes no horário combinado (hoje só aparecem no resumo).
 
 ### Ideias (não implementadas)
 
-- Voz (reconhecimento e síntese de fala).
+- Voz mais natural (a atual, do Windows, soa robótica), palavra de ativação e execução em segundo plano.
 - Interface gráfica.
 - Integração com calendário.
 - Pesquisa na web.
@@ -46,6 +48,8 @@ aissy/
   long_term_memory.py       memória de longo prazo (SQLite) e busca híbrida
   embeddings.py             cliente de embeddings (Ollama)
   tools.py                  ferramentas e suas definições
+  persona.py                prompt de sistema e personalidade
+  voice.py                  modo voz (gravação, transcrição, fala)
   tasks.py                  tarefas e lembretes (SQLite)
   briefing.py               resumo do dia
   commands.py               comandos /hoje, /tarefas, /feito, /apagar
@@ -53,7 +57,7 @@ aissy/
   providers/
     ollama_provider.py      LLM local
     openai_provider.py      LLM em nuvem (não validado)
-evaluation/                 avaliação da recuperação de memórias
+evaluation/                 avaliação da recuperação de memórias e da persona
 tests/                      testes automatizados
 ```
 
@@ -80,6 +84,15 @@ ollama pull bge-m3
 
 python main.py
 ```
+
+Para usar o modo voz (opcional), instale também as dependências de voz e abra com `--voz`, ou digite `/voz` durante a conversa:
+
+```powershell
+pip install -r requirements-voice.txt
+python main.py --voz
+```
+
+Para testar outro modelo do Ollama: `$env:AISSY_MODEL = "nome-do-modelo"`. O modelo precisa aceitar ferramentas (tool calling).
 
 Os dados locais (conversas e memórias) ficam em `data/`, que não é versionada. Chaves de API, se usadas, ficam em um arquivo `.env`, também fora do Git.
 
@@ -112,6 +125,9 @@ O conjunto de avaliação é pequeno e feito à mão, então os números servem 
 - O `OpenAIProvider` não foi validado com chamadas reais.
 - É um projeto de uso pessoal, para um único usuário e sem autenticação.
 - Modelos locais de 7B erram às vezes, inclusive ao decidir quando chamar uma ferramenta. Por isso pedidos claros de lembrete são interpretados por regras em código, e uma trava substitui respostas que dizem "anotei" sem que nada tenha sido salvo.
+- O modelo precisa suportar tool calling no Ollama. O `gemma3:12b`, por exemplo, retornou erro 400 nos testes e não funcionou.
+- A voz do Windows é robótica e só há uma voz feminina em português instalada por padrão.
+- O reconhecimento de fala (`faster-whisper` small) às vezes erra palavras.
 
 ## Licença
 
