@@ -191,3 +191,160 @@ def test_session_say_delegates_to_speaker():
     VoiceSession(None, None, Speaker()).say("oi", "en")
 
     assert calls == [("oi", "en")]
+
+
+# ---------- ouvir sozinho ----------
+
+from aissy.voice import AutoStopDetector, is_exit_phrase, is_noise_transcript
+
+
+def run(detector, levels, block=0.1):
+    for level in levels:
+        state = detector.feed(level, block)
+
+        if state != "continue":
+            return state
+
+    return "continue"
+
+
+def test_stops_after_silence_following_speech():
+    detector = AutoStopDetector(threshold=0.02, silence_seconds=1.0)
+
+    assert run(detector, [0.0] * 5 + [0.1] * 10 + [0.0] * 20) == "stop"
+
+
+def test_does_not_stop_during_a_short_pause():
+    detector = AutoStopDetector(threshold=0.02, silence_seconds=1.0)
+
+    assert run(detector, [0.1] * 10 + [0.0] * 5 + [0.1] * 10) == "continue"
+
+
+def test_times_out_when_nobody_speaks():
+    detector = AutoStopDetector(threshold=0.02, wait_seconds=2.0)
+
+    assert run(detector, [0.0] * 50) == "timeout"
+
+
+def test_stops_at_max_length_even_if_still_talking():
+    detector = AutoStopDetector(threshold=0.02, max_seconds=3.0)
+
+    assert run(detector, [0.1] * 100) == "stop"
+
+
+@pytest.mark.parametrize(
+    "text", ["Tchau!", "sair", "Até mais.", "exit", "Tchau, AISSY"[:5] + "!"]
+)
+def test_exit_phrases(text):
+    assert is_exit_phrase(text)
+
+
+@pytest.mark.parametrize("text", ["tchau, mas antes me lembra de X", "oi", ""])
+def test_normal_phrases_are_not_exit(text):
+    assert not is_exit_phrase(text)
+
+
+def test_whisper_noise_artifacts_are_detected():
+    assert is_noise_transcript("Legendas pela comunidade Amara.org")
+    assert not is_noise_transcript("me lembra de estudar")
+
+
+def test_session_drops_noise_transcripts():
+    class Recorder:
+        def record(self):
+            return None
+
+        def record_auto(self):
+            return "auto"
+
+    class Transcriber:
+        def transcribe(self, audio):
+            return "Legendas pela comunidade Amara.org"
+
+    assert VoiceSession(Recorder(), Transcriber(), None).listen(auto=True) == ""
+
+
+def test_session_uses_auto_recorder_when_asked():
+    calls = []
+
+    class Recorder:
+        def record(self):
+            calls.append("manual")
+
+        def record_auto(self):
+            calls.append("auto")
+
+    class Transcriber:
+        def transcribe(self, audio):
+            return "oi"
+
+    session = VoiceSession(Recorder(), Transcriber(), None)
+    session.listen(auto=True)
+    session.listen()
+
+    assert calls == ["auto", "manual"]
+
+
+def test_code_blocks_are_not_read_aloud():
+    cleaned = clean_for_speech("Faz assim:\n```python\nprint(1)\n```\nPronto!")
+
+    assert "print" not in cleaned
+    assert "código na tela" in cleaned
+
+
+# ---------- filtros contra texto inventado a partir de ruído ----------
+
+def speech_audio():
+    t = np.linspace(0, 2, SAMPLE_RATE * 2, dtype="float32")
+    return 0.3 * np.sin(2 * np.pi * 220 * t)
+
+
+def fake_model(language, probability, segments):
+    class Model:
+        def transcribe(self, audio, **kwargs):
+            info = SimpleNamespace(
+                language=language,
+                language_probability=probability,
+            )
+            return iter(segments), info
+
+    return Model()
+
+
+def seg(text, no_speech=0.0, logprob=-0.2):
+    return SimpleNamespace(
+        text=text, no_speech_prob=no_speech, avg_logprob=logprob
+    )
+
+
+def test_transcriber_returns_good_segments():
+    model = fake_model("pt", 0.95, [seg(" oi"), seg(" tudo bem?")])
+
+    assert WhisperTranscriber(model=model).transcribe(speech_audio()) == "oi tudo bem?"
+
+
+def test_transcriber_rejects_unexpected_language():
+    model = fake_model("ko", 0.9, [seg("대시지 대시지")])
+
+    assert WhisperTranscriber(model=model).transcribe(speech_audio()) == ""
+
+
+def test_transcriber_rejects_low_language_confidence():
+    model = fake_model("pt", 0.1, [seg("hmm")])
+
+    assert WhisperTranscriber(model=model).transcribe(speech_audio()) == ""
+
+
+def test_transcriber_drops_dubious_segments():
+    model = fake_model(
+        "pt", 0.9,
+        [seg("oi"), seg("lixo", no_speech=0.9), seg("mais lixo", logprob=-2.0)],
+    )
+
+    assert WhisperTranscriber(model=model).transcribe(speech_audio()) == "oi"
+
+
+def test_non_latin_text_is_noise():
+    assert is_noise_transcript("대시지 대시지")
+    assert is_noise_transcript("ありがとう")
+    assert not is_noise_transcript("olá, tudo bem? ¿cómo estás?")
