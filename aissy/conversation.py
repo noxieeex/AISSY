@@ -5,6 +5,7 @@ from datetime import datetime
 from aissy.llm import generate_response, generate_response_with_tools
 from aissy.memory import Memory
 from aissy.long_term_memory import LongTermMemory
+from aissy.task_parser import parse_task_request
 from aissy.tools import (
     TOOL_DEFINITIONS,
     WEEKDAYS_PT,
@@ -491,6 +492,57 @@ class Conversation:
             + options
         )
 
+    def _handle_task_request(self, content, language):
+        """Pedidos claros de lembrete são salvos em código, sem depender do modelo."""
+        if self.task_store is None:
+            return None
+
+        now = self.now_fn()
+        parsed = parse_task_request(content, now.date())
+
+        if parsed is None:
+            return None
+
+        task = self.task_store.add_task(parsed["title"], parsed["due"])
+        due = task["due"]
+
+        if language == "en":
+            reply = f'Done! Saved task #{task["id"]}: "{task["title"]}"'
+            if due:
+                reply += f" for {due.replace('T', ' at ')}"
+            return reply + "."
+
+        reply = f'Anotado! Tarefa #{task["id"]}: "{task["title"]}"'
+
+        if due:
+            day = datetime.fromisoformat(due[:10])
+            reply += (
+                f" para {WEEKDAYS_PT[day.weekday()]}, "
+                f"{day.strftime('%d/%m/%Y')}"
+            )
+            if "T" in due:
+                reply += f" às {due[11:16]}"
+
+        return reply + "."
+
+    def _claims_saved_task(self, text):
+        if not text:
+            return False
+
+        claim = re.search(
+            r"\b(anotei|anotado|salvei|adicionei|marquei|registrei|agendei|"
+            r"i(?:'ve| have)? (?:noted|saved|added|set|scheduled))\b",
+            text,
+            re.IGNORECASE,
+        )
+        topic = re.search(
+            r"lembrete|tarefa|reminder|task|lembrar|remind",
+            text,
+            re.IGNORECASE,
+        )
+
+        return bool(claim and topic)
+
     def _execute_tool_calls(self, tool_calls):
         results = []
 
@@ -636,6 +688,11 @@ class Conversation:
         if forget_response is not None:
             return self._save_exchange(content, forget_response)
 
+        task_response = self._handle_task_request(content, language)
+
+        if task_response is not None:
+            return self._save_exchange(content, task_response)
+
         messages = self.get_messages()
         messages.append({"role": "user", "content": content})
 
@@ -663,6 +720,7 @@ class Conversation:
             return response["content"]
 
         max_tool_rounds = 5
+        task_tool_called = False
 
         for round_number in range(max_tool_rounds + 1):
             response = generate_response_with_tools(
@@ -671,8 +729,33 @@ class Conversation:
                 TOOL_DEFINITIONS,
             )
 
+            if (
+                not response["tool_calls"]
+                and not task_tool_called
+                and self.task_store is not None
+                and self._claims_saved_task(response["content"])
+            ):
+                # O modelo disse que salvou, mas nenhuma ferramenta rodou.
+                if language == "en":
+                    response["content"] = (
+                        "I couldn't save that, so nothing was added. "
+                        "Try: remind me to call the dentist tomorrow at 10am."
+                    )
+                else:
+                    response["content"] = (
+                        "Não consegui salvar isso, então nada foi anotado. "
+                        "Tente assim: me lembra de ligar pro dentista "
+                        "amanhã às 10h."
+                    )
+
             prepared_messages.append(response)
             messages.append(response)
+
+            if response["tool_calls"] and any(
+                call["function"]["name"] in ("add_task", "complete_task")
+                for call in response["tool_calls"]
+            ):
+                task_tool_called = True
 
             if not response["tool_calls"]:
                 self.messages = messages

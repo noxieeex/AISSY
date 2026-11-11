@@ -15,6 +15,7 @@ Assistente pessoal em Python, feita para rodar **localmente** (via Ollama), com 
 - Recuperação híbrida de memórias: busca por palavras-chave combinada com similaridade semântica por embeddings (`bge-m3`, via Ollama), fundidas por Reciprocal Rank Fusion. Se os embeddings falharem, a busca volta para palavras-chave.
 - Tarefas e lembretes em SQLite (`data/tasks.db`): a AISSY cria, lista e conclui tarefas por conversa (tool calling) ou por comandos (`/tarefas`, `/feito N`, `/apagar N`).
 - Abertura proativa: ao iniciar e com `/hoje`, mostra saudação, data e tarefas atrasadas, de hoje e sem prazo. O resumo é montado em código, sem depender do modelo.
+- Pedidos como "me lembra de X amanhã às 10h" são interpretados em código (data, hora e título), sem depender do modelo.
 - Erros de ferramentas voltam ao modelo como resultado, em vez de derrubar a conversa. A data e a hora atuais entram no contexto de cada resposta.
 - Mensagem amigável quando o Ollama está fora do ar.
 - Script de avaliação que compara busca por palavras, busca semântica e busca híbrida em um conjunto de perguntas.
@@ -99,10 +100,10 @@ python -m evaluation.evaluate_retrieval
 | Método | hit@1 | hit@3 | Falsos positivos |
 |---|---|---|---|
 | Palavras-chave (busca original) | 3/13 | 4/13 | 1/4 |
-| Semântica | _a preencher_ | _a preencher_ | _a preencher_ |
-| Híbrida | _a preencher_ | _a preencher_ | _a preencher_ |
+| Semântica (limiar 0.5) | 10/13 | 12/13 | 0/4 |
+| Híbrida (limiar 0.5) | 10/13 | 12/13 | 1/4 |
 
-O conjunto de avaliação é pequeno e feito à mão, então os números servem para comparar métodos, não como medida absoluta.
+O conjunto de avaliação é pequeno e feito à mão, então os números servem para comparar métodos, não como medida absoluta. O limiar de similaridade (0.5) foi escolhido nesse mesmo conjunto, então o resultado provavelmente está otimista; com 0.6 a busca começa a perder acertos (hit@1 cai para 7/13).
 
 ## Limitações conhecidas
 
@@ -110,7 +111,7 @@ O conjunto de avaliação é pequeno e feito à mão, então os números servem 
 - Lembretes não disparam notificação no horário; aparecem no resumo do dia.
 - O `OpenAIProvider` não foi validado com chamadas reais.
 - É um projeto de uso pessoal, para um único usuário e sem autenticação.
-- Modelos locais de 7B erram às vezes, inclusive ao decidir quando chamar uma ferramenta.
+- Modelos locais de 7B erram às vezes, inclusive ao decidir quando chamar uma ferramenta. Por isso pedidos claros de lembrete são interpretados por regras em código, e uma trava substitui respostas que dizem "anotei" sem que nada tenha sido salvo.
 
 ## Licença
 

@@ -136,7 +136,7 @@ def test_model_can_add_a_task_through_the_loop(store):
     ])
 
     answer = make_conversation(store).send_message(
-        "me lembra de ligar pro dentista", llm
+        "não esquece de ligar pro dentista", llm
     )
 
     assert answer == "Anotado!"
@@ -208,3 +208,60 @@ def test_spanish_message_gets_spanish_instruction(store):
     make_conversation(store).send_message("hola, necesito ayuda por favor", llm)
 
     assert "español" in llm.seen[0][0]["content"]
+
+
+# ---------- pedidos tratados em código e trava contra "anotei" falso ----------
+
+def test_reminder_request_is_saved_without_calling_the_model(store):
+    llm = ScriptedLLM([])
+
+    answer = make_conversation(store).send_message(
+        "me lembra de ligar pro dentista amanhã às 10h", llm
+    )
+
+    assert llm.seen == []
+    assert "Anotado" in answer and "10:00" in answer
+    assert store.list_tasks()[0]["due"] == "2026-11-13T10:00"
+
+
+def test_english_reminder_gets_english_confirmation(store):
+    answer = make_conversation(store).send_message(
+        "remind me to call mom tomorrow", ScriptedLLM([])
+    )
+
+    assert answer.startswith("Done!")
+
+
+def test_false_claim_of_saving_is_replaced(store):
+    llm = ScriptedLLM([
+        {
+            "role": "assistant",
+            "content": "Anotei seu lembrete no calendário!",
+            "tool_calls": [],
+        },
+    ])
+
+    answer = make_conversation(store).send_message(
+        "não esquece de me avisar da reunião", llm
+    )
+
+    assert "Não consegui salvar" in answer
+    assert store.list_tasks() == []
+
+
+def test_claim_is_kept_when_the_tool_really_ran(store):
+    llm = ScriptedLLM([
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [tool_call("add_task", {"title": "reunião"})],
+        },
+        {"role": "assistant", "content": "Anotei o lembrete!", "tool_calls": []},
+    ])
+
+    answer = make_conversation(store).send_message(
+        "não esquece de me avisar da reunião", llm
+    )
+
+    assert answer == "Anotei o lembrete!"
+    assert len(store.list_tasks()) == 1

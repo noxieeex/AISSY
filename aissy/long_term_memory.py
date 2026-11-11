@@ -9,7 +9,7 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MIN_SIMILARITY = 0.45  # chute inicial; a avaliação calibra
+DEFAULT_MIN_SIMILARITY = 0.5  # chute inicial; a avaliação calibra
 RRF_K = 60
 CANDIDATE_POOL = 20
 
