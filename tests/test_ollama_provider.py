@@ -1,3 +1,11 @@
+from unittest.mock import MagicMock, Mock, patch
+
+import pytest
+import requests
+
+from aissy.errors import ProviderUnavailableError
+from aissy.providers.ollama_provider import OllamaProvider
+
 @patch("aissy.providers.ollama_provider.requests.post")
 def test_provider_raises_unavailable_error_on_timeout(mock_post):
     mock_post.side_effect = requests.exceptions.Timeout("too slow")
@@ -30,3 +38,4 @@ def test_provider_sends_a_request_timeout(mock_post):
 
     _, kwargs = mock_post.call_args
     assert kwargs["timeout"] > 0
+

@@ -65,7 +65,7 @@ def test_get_date_rejects_boolean_offset():
 
 def test_datetime_tools_are_registered():
     names = [tool["function"]["name"] for tool in TOOL_DEFINITIONS]
-    assert names == ["get_current_datetime", "get_date"]
+    assert {"get_current_datetime", "get_date"} <= set(names)
 
 
 def test_execute_tool_calls_datetime_function():
@@ -133,3 +133,4 @@ def test_detects_days_in_past():
 
 def test_ignores_messages_without_relative_dates():
     assert get_relative_date_offset("Como você está?") is None
+

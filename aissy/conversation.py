@@ -1,4 +1,3 @@
-
 import json
 import re
 from datetime import datetime
@@ -8,6 +7,7 @@ from aissy.memory import Memory
 from aissy.long_term_memory import LongTermMemory
 from aissy.tools import (
     TOOL_DEFINITIONS,
+    WEEKDAYS_PT,
     execute_tool,
     get_relative_date_offset,
     is_date_question,
@@ -15,7 +15,7 @@ from aissy.tools import (
 
 
 def detect_language(content):
-    """Detecta português brasileiro ou inglês na mensagem atual."""
+    """Detecta português brasileiro, inglês ou espanhol (heurística)."""
 
     text = content.lower().strip()
 
@@ -54,11 +54,31 @@ def detect_language(content):
         "remember", "forget", "studies", "study",
     }
 
+    spanish_words = {
+        "hola", "qué", "cómo", "estás", "estoy", "gracias",
+        "buenos", "días", "buenas", "tardes", "noches",
+        "quiero", "necesito", "por", "favor", "pero", "muy",
+        "tengo", "puedes", "ayuda", "mañana", "qué", "dónde",
+        "cuál", "también", "porque", "usted", "eres", "esto",
+    }
+
+    spanish_score = len(words & spanish_words)
+
+    if "¿" in text or "¡" in text or "ñ" in text:
+        spanish_score += 2
+
     portuguese_score = len(words & portuguese_words)
     english_score = len(words & english_words)
 
     if any(character in text for character in "ãõáéíóúâêôç"):
         portuguese_score += 2
+
+    if (
+        spanish_score >= 2
+        and spanish_score > portuguese_score
+        and spanish_score > english_score
+    ):
+        return "es"
 
     if english_score > portuguese_score:
         return "en"
@@ -72,7 +92,11 @@ class Conversation:
         system_prompt,
         new_conversation=False,
         long_term_memory=None,
+        task_store=None,
+        now_fn=None,
     ):
+        self.task_store = task_store
+        self.now_fn = now_fn or datetime.now
         self.memory = Memory(new_conversation=new_conversation)
 
         self.long_term_memory = (
@@ -148,6 +172,12 @@ class Conversation:
                 "Reply entirely in English. "
                 "Do not switch to Portuguese unless the user does."
             )
+        elif language == "es":
+            instruction = (
+                "REQUISITO DE IDIOMA: "
+                "Responde íntegramente en español. "
+                "No cambies de idioma a menos que el usuario lo haga."
+            )
         else:
             instruction = (
                 "INSTRUÇÃO OBRIGATÓRIA DE IDIOMA: "
@@ -156,6 +186,13 @@ class Conversation:
                 "para inglês. Ignore o idioma de respostas anteriores "
                 "que não corresponda ao idioma da mensagem atual."
             )
+
+        now = self.now_fn()
+        instruction += (
+            f"\n\nCurrent local date and time: "
+            f"{WEEKDAYS_PT[now.weekday()]}, "
+            f"{now.strftime('%Y-%m-%d %H:%M')}."
+        )
 
         if relevant_memories:
             if language == "en":
@@ -454,71 +491,30 @@ class Conversation:
             + options
         )
 
-        matches = self.long_term_memory.search_memories(
-            query,
-            limit=5,
-        )
-
-        if not matches:
-            if language == "en":
-                return "I couldn't find a matching memory to forget."
-
-            return "Não encontrei nenhuma memória correspondente."
-
-        if len(matches) == 1:
-            memory_id = matches[0]["id"]
-            deleted = self.long_term_memory.delete_memory(memory_id)
-
-            if language == "en":
-                return (
-                    "I've deleted that memory."
-                    if deleted
-                    else "I couldn't find that memory anymore."
-                )
-
-            return (
-                "Excluí essa memória."
-                if deleted
-                else "Não encontrei mais essa memória."
-            )
-
-        self.pending_deletion = matches
-
-        if language == "en":
-            options = "\n".join(
-                f"{index + 1}. {item['content']}"
-                for index, item in enumerate(matches)
-            )
-
-            return (
-                "I found multiple matching memories. "
-                "Which one should I delete? Reply with its number:\n"
-                + options
-            )
-
-        options = "\n".join(
-            f"{index + 1}. {item['content']}"
-            for index, item in enumerate(matches)
-        )
-
-        return (
-            "Encontrei várias memórias correspondentes. "
-            "Qual delas você quer excluir? Responda com o número:\n"
-            + options
-        )
-
     def _execute_tool_calls(self, tool_calls):
         results = []
 
         for call in tool_calls:
             function = call["function"]
             name = function["name"]
-            arguments = json.loads(function["arguments"])
 
-            if not isinstance(arguments, dict):
-                raise TypeError("Tool arguments must be a JSON object.")
+            try:
+                arguments = function["arguments"]
 
-            result = execute_tool(name, arguments)
+                if isinstance(arguments, str):
+                    arguments = json.loads(arguments or "{}")
+
+                result = execute_tool(
+                    name,
+                    arguments,
+                    task_store=self.task_store,
+                )
+            except (ValueError, TypeError, RuntimeError, KeyError) as error:
+                # O modelo recebe o erro e pode se corrigir ou avisar o usuário.
+                result = json.dumps(
+                    {"error": str(error)},
+                    ensure_ascii=False,
+                )
 
             results.append({
                 "role": "tool",

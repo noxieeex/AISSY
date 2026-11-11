@@ -131,6 +131,73 @@ TOOL_DEFINITIONS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_task",
+            "description": (
+                "Save a task or reminder for the user. Use when the user asks "
+                "to be reminded of something or to add something to their "
+                "to-do list. If they mention a day, call get_date first and "
+                "pass the resulting date in due."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "Short description of the task.",
+                    },
+                    "due": {
+                        "type": "string",
+                        "description": (
+                            "Optional deadline: YYYY-MM-DD, or "
+                            "YYYY-MM-DDTHH:MM when a time is given."
+                        ),
+                    },
+                },
+                "required": ["title"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_tasks",
+            "description": (
+                "List the user's pending tasks and reminders, with ids. "
+                "Use when the user asks what they have to do."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "complete_task",
+            "description": (
+                "Mark a task as done by its id. Call list_tasks first if "
+                "you do not know the id."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "integer",
+                        "description": "Id of the task, from list_tasks.",
+                    }
+                },
+                "required": ["task_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
 ]
 
 
@@ -140,8 +207,43 @@ TOOL_FUNCTIONS = {
 }
 
 
-def execute_tool(name, arguments=None):
-    if name not in TOOL_FUNCTIONS:
+TASK_TOOLS = {"add_task", "list_tasks", "complete_task"}
+
+
+def _run_task_tool(name, arguments, task_store):
+    if task_store is None:
+        raise RuntimeError("Task storage is not available.")
+
+    if name == "add_task":
+        allowed = {"title", "due"}
+
+        if "title" not in arguments or not set(arguments) <= allowed:
+            raise ValueError("add_task requires title and accepts only due.")
+
+        return task_store.add_task(arguments["title"], arguments.get("due"))
+
+    if name == "list_tasks":
+        if arguments:
+            raise ValueError("Unexpected arguments for list_tasks.")
+
+        return task_store.list_tasks()
+
+    if set(arguments) != {"task_id"}:
+        raise ValueError("complete_task requires only task_id.")
+
+    task_id = arguments["task_id"]
+
+    if isinstance(task_id, bool) or not isinstance(task_id, int):
+        raise TypeError("task_id must be an integer.")
+
+    if not task_store.complete_task(task_id):
+        raise ValueError(f"No pending task with id {task_id}.")
+
+    return {"completed": task_id}
+
+
+def execute_tool(name, arguments=None, task_store=None):
+    if name not in TOOL_FUNCTIONS and name not in TASK_TOOLS:
         raise ValueError(f"Unknown tool: {name}")
 
     if arguments is None:
@@ -150,13 +252,16 @@ def execute_tool(name, arguments=None):
     if not isinstance(arguments, dict):
         raise TypeError("Tool arguments must be a dictionary.")
 
-    if name == "get_current_datetime" and arguments:
-        raise ValueError("Unexpected arguments for get_current_datetime.")
+    if name in TASK_TOOLS:
+        result = _run_task_tool(name, arguments, task_store)
+    else:
+        if name == "get_current_datetime" and arguments:
+            raise ValueError("Unexpected arguments for get_current_datetime.")
 
-    if name == "get_date" and set(arguments) != {"days_offset"}:
-        raise ValueError("get_date requires only days_offset.")
+        if name == "get_date" and set(arguments) != {"days_offset"}:
+            raise ValueError("get_date requires only days_offset.")
 
-    result = TOOL_FUNCTIONS[name](**arguments)
+        result = TOOL_FUNCTIONS[name](**arguments)
 
     if isinstance(result, (dict, list)):
         return json.dumps(result, ensure_ascii=False)

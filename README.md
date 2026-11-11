@@ -1,6 +1,6 @@
 # AISSY
 
-Assistente pessoal em Python, feita para rodar **localmente** (via Ollama), com conversa em português e inglês, memória de longo prazo e uso de ferramentas (tool calling). É um projeto pessoal, em desenvolvimento contínuo.
+Assistente pessoal em Python, feita para rodar **localmente** (via Ollama), com conversa em português, inglês e espanhol, memória de longo prazo e uso de ferramentas (tool calling). É um projeto pessoal, em desenvolvimento contínuo.
 
 > Este README separa o que **existe e está testado**, o que está **em desenvolvimento** e o que é **apenas ideia**.
 
@@ -13,14 +13,17 @@ Assistente pessoal em Python, feita para rodar **localmente** (via Ollama), com 
 - Tool calling com laço de agente (até 5 rodadas) e ferramentas de data e hora (`get_current_datetime`, `get_date`).
 - Memória de longo prazo em SQLite: criar, listar, atualizar e excluir. Pede confirmação antes de salvar e de excluir. Cada memória tem visibilidade `normal` ou `private`, e memórias privadas nunca são enviadas ao modelo nem usadas na busca.
 - Recuperação híbrida de memórias: busca por palavras-chave combinada com similaridade semântica por embeddings (`bge-m3`, via Ollama), fundidas por Reciprocal Rank Fusion. Se os embeddings falharem, a busca volta para palavras-chave.
+- Tarefas e lembretes em SQLite (`data/tasks.db`): a AISSY cria, lista e conclui tarefas por conversa (tool calling) ou por comandos (`/tarefas`, `/feito N`, `/apagar N`).
+- Abertura proativa: ao iniciar e com `/hoje`, mostra saudação, data e tarefas atrasadas, de hoje e sem prazo. O resumo é montado em código, sem depender do modelo.
+- Erros de ferramentas voltam ao modelo como resultado, em vez de derrubar a conversa. A data e a hora atuais entram no contexto de cada resposta.
 - Mensagem amigável quando o Ollama está fora do ar.
 - Script de avaliação que compara busca por palavras, busca semântica e busca híbrida em um conjunto de perguntas.
 - Suíte de testes automatizados com `pytest`, usando LLM e embedder falsos, sem depender de GPU.
 
 ### Em desenvolvimento
 
-- Persona e tom de voz da AISSY.
-- Módulo de tarefas e lembretes.
+- Persona e tom de voz da AISSY (ajuste fino).
+- Notificações de lembretes no horário combinado (hoje só aparecem no resumo).
 
 ### Ideias (não implementadas)
 
@@ -30,7 +33,6 @@ Assistente pessoal em Python, feita para rodar **localmente** (via Ollama), com 
 - Pesquisa na web.
 - Hub de jogos (backlog, lançamentos, atualizações).
 - Modo de estudo de idiomas.
-- Notificações do sistema.
 
 ## Arquitetura
 
@@ -43,6 +45,9 @@ aissy/
   long_term_memory.py       memória de longo prazo (SQLite) e busca híbrida
   embeddings.py             cliente de embeddings (Ollama)
   tools.py                  ferramentas e suas definições
+  tasks.py                  tarefas e lembretes (SQLite)
+  briefing.py               resumo do dia
+  commands.py               comandos /hoje, /tarefas, /feito, /apagar
   errors.py                 erros próprios da aplicação
   providers/
     ollama_provider.py      LLM local
@@ -101,7 +106,8 @@ O conjunto de avaliação é pequeno e feito à mão, então os números servem 
 
 ## Limitações conhecidas
 
-- A detecção de idioma é uma heurística e só distingue português do Brasil e inglês.
+- A detecção de idioma é uma heurística (português do Brasil, inglês e espanhol). Mensagens fixas do sistema, como confirmações, existem só em português e inglês.
+- Lembretes não disparam notificação no horário; aparecem no resumo do dia.
 - O `OpenAIProvider` não foi validado com chamadas reais.
 - É um projeto de uso pessoal, para um único usuário e sem autenticação.
 - Modelos locais de 7B erram às vezes, inclusive ao decidir quando chamar uma ferramenta.
