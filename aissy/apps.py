@@ -52,7 +52,7 @@ class AppLauncher:
 
         try:
             extra = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        except (OSError, ValueError):
             return
 
         if isinstance(extra, dict):

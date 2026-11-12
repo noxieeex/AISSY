@@ -138,11 +138,21 @@ def test_user_config_adds_apps(tmp_path):
     assert launcher.find("x") is None
 
 
-def test_broken_user_config_is_ignored(tmp_path):
+@pytest.mark.parametrize(
+    "content",
+    [
+        "{não é json".encode("utf-8"),
+        b"{n\xe3o \xe9 json",  # texto salvo em ANSI (cp1252), não UTF-8
+        "[1, 2, 3]".encode("utf-8"),
+    ],
+)
+def test_broken_user_config_is_ignored(tmp_path, content):
     config = tmp_path / "apps.json"
-    config.write_text("{não é json")
+    config.write_bytes(content)
 
-    assert "spotify" in AppLauncher(opener=Opened(), config_path=config).names()
+    launcher = AppLauncher(opener=Opened(), config_path=config)
+
+    assert "spotify" in launcher.names()
 
 
 def test_open_app_tool_is_declared_and_works(launcher, safety):
