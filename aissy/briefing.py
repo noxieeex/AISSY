@@ -2,6 +2,8 @@ from aissy.tools import WEEKDAYS_PT
 
 
 def _greeting(hour):
+    if hour < 5:
+        return "Boa noite"
     if hour < 12:
         return "Bom dia"
     if hour < 18:

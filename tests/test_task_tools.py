@@ -4,8 +4,18 @@ from datetime import datetime
 import pytest
 
 from aissy.conversation import Conversation
+from aissy.safety import MemoryAuditLog, Policy, SafetyLayer
 from aissy.tasks import TaskStore
 from aissy.tools import TOOL_DEFINITIONS, execute_tool
+
+
+def make_safety():
+    return SafetyLayer(Policy(), MemoryAuditLog())
+
+
+@pytest.fixture
+def safety():
+    return make_safety()
 
 
 @pytest.fixture
@@ -23,29 +33,37 @@ def test_task_tools_are_declared():
     assert {"add_task", "list_tasks", "complete_task"} <= names
 
 
-def test_add_list_complete_via_tools(store):
+def test_add_list_complete_via_tools(store, safety):
     added = json.loads(
         execute_tool(
             "add_task",
             {"title": "pagar conta", "due": "2026-11-13"},
             task_store=store,
+            safety=safety,
         )
     )
     assert added["title"] == "pagar conta"
 
-    listed = json.loads(execute_tool("list_tasks", {}, task_store=store))
+    listed = json.loads(execute_tool("list_tasks", {}, task_store=store, safety=safety))
     assert [t["title"] for t in listed] == ["pagar conta"]
 
     done = json.loads(
-        execute_tool("complete_task", {"task_id": added["id"]}, task_store=store)
+        execute_tool(
+            "complete_task", {"task_id": added["id"]}, task_store=store, safety=safety
+        )
     )
     assert done == {"completed": added["id"]}
-    assert json.loads(execute_tool("list_tasks", {}, task_store=store)) == []
+    assert json.loads(execute_tool("list_tasks", {}, task_store=store, safety=safety)) == []
 
 
-def test_task_tool_without_store_raises():
+def test_task_tool_without_store_raises(safety):
     with pytest.raises(RuntimeError):
-        execute_tool("list_tasks", {})
+        execute_tool("list_tasks", {}, safety=safety)
+
+
+def test_task_tool_without_safety_layer_is_blocked(store):
+    with pytest.raises(RuntimeError, match="Blocked by safety layer"):
+        execute_tool("list_tasks", {}, task_store=store)
 
 
 @pytest.mark.parametrize(
@@ -61,9 +79,9 @@ def test_task_tool_without_store_raises():
         ("complete_task", {"task_id": 999}),
     ],
 )
-def test_task_tools_reject_bad_arguments(store, name, arguments):
+def test_task_tools_reject_bad_arguments(store, safety, name, arguments):
     with pytest.raises((ValueError, TypeError)):
-        execute_tool(name, arguments, task_store=store)
+        execute_tool(name, arguments, task_store=store, safety=safety)
 
 
 def test_date_tools_still_work():
@@ -120,6 +138,7 @@ def make_conversation(store):
         "system",
         task_store=store,
         now_fn=lambda: NOW,
+        safety=make_safety(),
     )
 
 

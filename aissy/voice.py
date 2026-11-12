@@ -5,6 +5,13 @@ ALLOWED_LANGUAGES = {"pt", "en", "es"}
 MIN_LANGUAGE_PROBABILITY = 0.4
 MAX_NO_SPEECH_PROB = 0.6
 MIN_AVG_LOGPROB = -1.0
+
+# Ajuda o Whisper a acertar nomes próprios que ele não conhece.
+VOCABULARY_PROMPT = (
+    "Conversa informal com a AISSY, assistente pessoal da Ge (também chamada "
+    "de Noxie). Palavras: AISSY, Ge, Noxie, UFU Racing, TikTok, Python, "
+    "Ollama, iFood."
+)
 MIN_SECONDS = 0.4
 SILENCE_RMS = 0.005
 
@@ -272,6 +279,7 @@ class WhisperTranscriber:
             vad_filter=True,
             language=None,
             condition_on_previous_text=False,
+            initial_prompt=VOCABULARY_PROMPT,
         )
 
         # Ruído vira texto em idiomas aleatórios: só aceita pt, en e es.

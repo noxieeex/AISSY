@@ -1,5 +1,5 @@
 import sqlite3
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 
@@ -61,6 +61,28 @@ class TaskStore:
             )
             """
         )
+        columns = {
+            row["name"]
+            for row in self._connection.execute("PRAGMA table_info(tasks)")
+        }
+
+        # Bancos criados antes dos lembretes avisados ganham a coluna nova.
+        if "notified" not in columns:
+            self._connection.execute(
+                "ALTER TABLE tasks ADD COLUMN notified INTEGER NOT NULL DEFAULT 0"
+            )
+
+        columns = [
+            row["name"]
+            for row in self._connection.execute("PRAGMA table_info(tasks)")
+        ]
+
+        # Bancos criados antes dos avisos ganham a coluna nova.
+        if "notified" not in columns:
+            self._connection.execute(
+                "ALTER TABLE tasks ADD COLUMN notified INTEGER NOT NULL DEFAULT 0"
+            )
+
         self._connection.commit()
 
     @staticmethod
@@ -135,6 +157,50 @@ class TaskStore:
             task for task in self.list_tasks()
             if task["due"] and _due_date(task["due"]) == day
         ]
+
+    def due_reminders(self, now):
+        """Tarefas com hora marcada que já passou e ainda não avisaram."""
+        limit = now.isoformat(timespec="minutes")
+
+        rows = self._connection.execute(
+            "SELECT * FROM tasks WHERE done = 0 AND notified = 0 "
+            "AND due LIKE '%T%' AND due <= ? ORDER BY due, id",
+            (limit,),
+        ).fetchall()
+
+        return [self._to_dict(row) for row in rows]
+
+    def mark_notified(self, task_ids):
+        for task_id in task_ids:
+            self._connection.execute(
+                "UPDATE tasks SET notified = 1 WHERE id = ?", (task_id,)
+            )
+
+        self._connection.commit()
+
+    def due_reminders(self, now, grace_minutes=10):
+        """
+        Tarefas com horário que acabaram de vencer e ainda não foram avisadas.
+        Vencidas há mais que a tolerância ficam só no resumo do dia.
+        """
+        rows = self._connection.execute(
+            "SELECT * FROM tasks WHERE done = 0 AND notified = 0 "
+            "AND due LIKE '%T%' ORDER BY due"
+        ).fetchall()
+
+        earliest = now - timedelta(minutes=grace_minutes)
+
+        return [
+            self._to_dict(row)
+            for row in rows
+            if earliest <= datetime.fromisoformat(row["due"]) <= now
+        ]
+
+    def mark_notified(self, task_id):
+        self._connection.execute(
+            "UPDATE tasks SET notified = 1 WHERE id = ?", (task_id,)
+        )
+        self._connection.commit()
 
     def close(self):
         self._connection.close()

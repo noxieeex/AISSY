@@ -5,10 +5,12 @@ from datetime import datetime
 from aissy.llm import generate_response, generate_response_with_tools
 from aissy.memory import Memory
 from aissy.long_term_memory import LongTermMemory
+from aissy.safety import ActionBlocked, Action, Origin, guard
 from aissy.task_parser import parse_task_request
 from aissy.tools import (
     TOOL_DEFINITIONS,
     WEEKDAYS_PT,
+    build_open_app_action,
     execute_tool,
     get_relative_date_offset,
     is_date_question,
@@ -52,7 +54,7 @@ def detect_language(content):
         "this", "that", "it", "for", "need", "help",
         "good", "morning", "evening", "night",
         "have", "has", "was", "were", "want",
-        "remember", "forget", "studies", "study",
+        "remember", "forget", "studies", "study", "open",
     }
 
     spanish_words = {
@@ -95,8 +97,12 @@ class Conversation:
         long_term_memory=None,
         task_store=None,
         now_fn=None,
+        app_launcher=None,
+        safety=None,
     ):
         self.task_store = task_store
+        self.app_launcher = app_launcher
+        self.safety = safety
         self.now_fn = now_fn or datetime.now
         self.memory = Memory(new_conversation=new_conversation)
 
@@ -510,7 +516,22 @@ class Conversation:
         if parsed is None:
             return None
 
-        task = self.task_store.add_task(parsed["title"], parsed["due"])
+        action = Action(
+            "task",
+            "create",
+            Origin.USER,
+            args={"title": parsed["title"], "due": parsed["due"]},
+        )
+
+        try:
+            task = guard(
+                self.safety,
+                action,
+                lambda: self.task_store.add_task(parsed["title"], parsed["due"]),
+            )
+        except ActionBlocked as blocked:
+            return self._blocked_reply(blocked, language)
+
         due = task["due"]
 
         if language == "en":
@@ -531,6 +552,51 @@ class Conversation:
                 reply += f" às {due[11:16]}"
 
         return reply + "."
+
+    def _blocked_reply(self, blocked, language):
+        if language == "en":
+            return f"I can't do that: {blocked.decision.reason}"
+
+        return (
+            "Não posso fazer isso. A camada de segurança bloqueou: "
+            f"{blocked.decision.reason}"
+        )
+
+    def _handle_open_app_request(self, content, language):
+        """'abre o spotify' é resolvido em código, só para apps permitidos."""
+        if self.app_launcher is None:
+            return None
+
+        match = re.match(
+            r"^(?:por favor,?\s*|please\s+)?(?:abre|abra|abrir|open)\s+(.+)$",
+            content.strip(),
+            re.IGNORECASE,
+        )
+
+        if not match or self.app_launcher.find(match.group(1)) is None:
+            return None
+
+        name = match.group(1)
+        action = build_open_app_action(self.app_launcher, name, Origin.USER)
+
+        try:
+            opened = guard(
+                self.safety,
+                action,
+                lambda: self.app_launcher.open(name),
+            )
+        except ActionBlocked as blocked:
+            return self._blocked_reply(blocked, language)
+        except (RuntimeError, OSError) as error:
+            if language == "en":
+                return f"I couldn't open it: {error}"
+
+            return f"Não consegui abrir: {error}"
+
+        if language == "en":
+            return f"Opening {opened}!"
+
+        return f"Abrindo {opened}!"
 
     def _claims_saved_task(self, text):
         if not text:
@@ -567,6 +633,8 @@ class Conversation:
                     name,
                     arguments,
                     task_store=self.task_store,
+                    app_launcher=self.app_launcher,
+                    safety=self.safety,
                 )
             except (ValueError, TypeError, RuntimeError, KeyError) as error:
                 # O modelo recebe o erro e pode se corrigir ou avisar o usuário.
@@ -699,6 +767,11 @@ class Conversation:
 
         if task_response is not None:
             return self._save_exchange(content, task_response)
+
+        app_response = self._handle_open_app_request(content, language)
+
+        if app_response is not None:
+            return self._save_exchange(content, app_response)
 
         messages = self.get_messages()
         messages.append({"role": "user", "content": content})

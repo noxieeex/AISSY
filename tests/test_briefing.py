@@ -47,3 +47,7 @@ def test_briefing_groups_tasks(store):
     assert "Para hoje:" in text and "reunião (às 14:30)" in text
     assert "Sem prazo:" in text and "ideia" in text
     assert "futura" not in text
+
+
+def test_late_night_is_not_good_morning(store):
+    assert "Boa noite" in build_briefing(store, datetime(2026, 11, 12, 0, 5))

@@ -2,6 +2,8 @@ import json
 import re
 from datetime import date, datetime, timedelta
 
+from aissy.safety import Action, Origin, guard
+
 
 WEEKDAYS_PT = (
     "segunda-feira",
@@ -134,6 +136,28 @@ TOOL_DEFINITIONS = [
     {
         "type": "function",
         "function": {
+            "name": "open_app",
+            "description": (
+                "Open an application on the user's computer, such as "
+                "Spotify, Steam, Chrome or the calculator. Only apps from "
+                "the allowed list can be opened."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "Name of the app, e.g. 'spotify'.",
+                    }
+                },
+                "required": ["name"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "add_task",
             "description": (
                 "Save a task or reminder for the user. Use when the user asks "
@@ -210,7 +234,21 @@ TOOL_FUNCTIONS = {
 TASK_TOOLS = {"add_task", "list_tasks", "complete_task"}
 
 
-def _run_task_tool(name, arguments, task_store):
+def build_open_app_action(app_launcher, name, origin):
+    """Ação 'abrir app' no formato que a Safety Layer avalia."""
+    key = app_launcher.find(name) or str(name).strip().lower()
+
+    return Action(
+        kind="app",
+        operation="open",
+        origin=origin,
+        target=key,
+        args={"launch": app_launcher.apps.get(key, "")},
+    )
+
+
+def _prepare_task_tool(name, arguments, task_store, origin):
+    """Valida os argumentos e devolve (ação, executor)."""
     if task_store is None:
         raise RuntimeError("Task storage is not available.")
 
@@ -220,13 +258,21 @@ def _run_task_tool(name, arguments, task_store):
         if "title" not in arguments or not set(arguments) <= allowed:
             raise ValueError("add_task requires title and accepts only due.")
 
-        return task_store.add_task(arguments["title"], arguments.get("due"))
+        title, due = arguments["title"], arguments.get("due")
+
+        return (
+            Action("task", "create", origin, args={"title": title, "due": due}),
+            lambda: task_store.add_task(title, due),
+        )
 
     if name == "list_tasks":
         if arguments:
             raise ValueError("Unexpected arguments for list_tasks.")
 
-        return task_store.list_tasks()
+        return (
+            Action("task", "read", origin),
+            lambda: task_store.list_tasks(),
+        )
 
     if set(arguments) != {"task_id"}:
         raise ValueError("complete_task requires only task_id.")
@@ -236,14 +282,44 @@ def _run_task_tool(name, arguments, task_store):
     if isinstance(task_id, bool) or not isinstance(task_id, int):
         raise TypeError("task_id must be an integer.")
 
-    if not task_store.complete_task(task_id):
-        raise ValueError(f"No pending task with id {task_id}.")
+    def complete():
+        if not task_store.complete_task(task_id):
+            raise ValueError(f"No pending task with id {task_id}.")
 
-    return {"completed": task_id}
+        return {"completed": task_id}
+
+    return Action("task", "complete", origin, target=str(task_id)), complete
 
 
-def execute_tool(name, arguments=None, task_store=None):
-    if name not in TOOL_FUNCTIONS and name not in TASK_TOOLS:
+def _prepare_open_app(arguments, app_launcher, origin):
+    if app_launcher is None:
+        raise RuntimeError("Opening apps is not available.")
+
+    if set(arguments) != {"name"} or not isinstance(arguments["name"], str):
+        raise ValueError("open_app requires only a text name.")
+
+    name = arguments["name"]
+
+    return (
+        build_open_app_action(app_launcher, name, origin),
+        lambda: {"opened": app_launcher.open(name)},
+    )
+
+
+def execute_tool(
+    name,
+    arguments=None,
+    task_store=None,
+    app_launcher=None,
+    safety=None,
+    origin=Origin.MODEL,
+):
+    """
+    Funções puras (data e hora) rodam direto: não tocam em nenhum recurso.
+    Ferramentas com efeito (tarefas, abrir apps) só executam através da
+    Safety Layer; sem ela, são bloqueadas.
+    """
+    if name not in TOOL_FUNCTIONS and name not in TASK_TOOLS and name != "open_app":
         raise ValueError(f"Unknown tool: {name}")
 
     if arguments is None:
@@ -252,8 +328,12 @@ def execute_tool(name, arguments=None, task_store=None):
     if not isinstance(arguments, dict):
         raise TypeError("Tool arguments must be a dictionary.")
 
-    if name in TASK_TOOLS:
-        result = _run_task_tool(name, arguments, task_store)
+    if name == "open_app":
+        action, executor = _prepare_open_app(arguments, app_launcher, origin)
+        result = guard(safety, action, executor)
+    elif name in TASK_TOOLS:
+        action, executor = _prepare_task_tool(name, arguments, task_store, origin)
+        result = guard(safety, action, executor)
     else:
         if name == "get_current_datetime" and arguments:
             raise ValueError("Unexpected arguments for get_current_datetime.")

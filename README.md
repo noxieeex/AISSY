@@ -17,6 +17,7 @@ Assistente pessoal em Python, feita para rodar **localmente** (via Ollama), com 
 - Abertura proativa: ao iniciar e com `/hoje`, mostra saudação, data e tarefas atrasadas, de hoje e sem prazo. O resumo é montado em código, sem depender do modelo.
 - Pedidos como "me lembra de X amanhã às 10h" são interpretados em código (data, hora e título), sem depender do modelo.
 - Erros de ferramentas voltam ao modelo como resultado, em vez de derrubar a conversa. A data e a hora atuais entram no contexto de cada resposta.
+- **Safety Layer** (fase 1): toda ação com efeito (tarefas, abrir apps) passa por uma camada independente do modelo, com allowlist, blocklist permanente, alvos protegidos (Riot/Vanguard), origem da ação, log de auditoria, parada de emergência (`/parar`) e política de bloquear na dúvida. Detalhes em [`docs/SAFETY.md`](docs/SAFETY.md).
 - Mensagem amigável quando o Ollama está fora do ar.
 - Modo voz opcional e 100% local: reconhecimento de fala com `faster-whisper` e fala com as vozes do Windows (`pyttsx3`), preferindo vozes femininas. Enter começa a gravação e Enter encerra. A lógica é testada com peças falsas; o áudio em si depende de microfone e das vozes instaladas, e foi validado manualmente.
 - Persona definida em `aissy/persona.py` e conferida por um script (`evaluation/persona_check.py`) que roda 11 frases no modelo e verifica idioma, frases de chatbot genérico, forma feminina, tamanho da resposta e emojis. Com `qwen2.5:7b-instruct` o resultado foi 9/11, e varia entre execuções.
@@ -26,7 +27,8 @@ Assistente pessoal em Python, feita para rodar **localmente** (via Ollama), com 
 ### Em desenvolvimento
 
 - Ajuste fino da persona: o modelo de 7B ainda escorrega para frases genéricas e erros de gramática.
-- Notificações de lembretes no horário combinado (hoje só aparecem no resumo).
+- Avisos de lembrete no horário (a AISSY fala ou escreve o lembrete quando vence). A lógica é testada com peças falsas; falta validar no uso real.
+- Abrir aplicativos por comando de voz ou texto, só de uma lista de apps permitidos (`aissy/apps.py`, extensível em `data/apps.json`). A lógica é testada com peças falsas; falta validar no Windows.
 
 ### Ideias (não implementadas)
 
@@ -51,6 +53,9 @@ aissy/
   persona.py                prompt de sistema e personalidade
   voice.py                  modo voz (gravação, transcrição, fala)
   tasks.py                  tarefas e lembretes (SQLite)
+  safety/                   Safety Layer: ações, política, auditoria, parada de emergência
+  reminders.py              avisos de lembrete no horário
+  apps.py                   abrir aplicativos permitidos
   briefing.py               resumo do dia
   commands.py               comandos /hoje, /tarefas, /feito, /apagar
   errors.py                 erros próprios da aplicação
@@ -121,7 +126,9 @@ O conjunto de avaliação é pequeno e feito à mão, então os números servem 
 ## Limitações conhecidas
 
 - A detecção de idioma é uma heurística (português do Brasil, inglês e espanhol). Mensagens fixas do sistema, como confirmações, existem só em português e inglês.
-- Lembretes não disparam notificação no horário; aparecem no resumo do dia.
+- A Safety Layer roda no mesmo processo do restante da AISSY: protege contra erros do modelo e prompt injection, não contra código malicioso com os mesmos privilégios. Confirmação genérica, permissões por pasta, backups e sandbox ainda não existem.
+- Os avisos de lembrete só acontecem com a AISSY aberta; no modo texto, só aparecem depois que você aperta Enter.
+- Abrir aplicativos só funciona no Windows e apenas para apps da lista permitida.
 - O `OpenAIProvider` não foi validado com chamadas reais.
 - É um projeto de uso pessoal, para um único usuário e sem autenticação.
 - Modelos locais de 7B erram às vezes, inclusive ao decidir quando chamar uma ferramenta. Por isso pedidos claros de lembrete são interpretados por regras em código, e uma trava substitui respostas que dizem "anotei" sem que nada tenha sido salvo.

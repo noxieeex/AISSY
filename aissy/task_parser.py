@@ -6,8 +6,13 @@ WEEKDAY_INDEX = {
     "quinta": 3, "sexta": 4, "sábado": 5, "sabado": 5, "domingo": 6,
 }
 
+TIMER_PATTERN = (
+    r"^(?:por favor,?\s*)?(?:(?:um|uma)\s+)?(?:timer|cronômetro|cronometro|"
+    r"alarme)\s+(?:de|para|pra|em|for)\s+(.+)$"
+)
+
 REQUEST_PATTERNS = (
-    r"^(?:por favor,?\s*)?me\s+lembr[ae]\s+(?:de\s+|que\s+)?(.+)$",
+    r"^(?:por favor,?\s*)?me\s+(?:lembr[ae]|avis[ae])\s+(?:de\s+|que\s+)?(.+)$",
     r"^(?:por favor,?\s*)?(?:anota|anote|adiciona|adicione|cria|crie)"
     r"\s+(?:uma\s+)?(?:tarefa|lembrete)(?:\s+(?:de|para|pra))?\s*:?\s*(.+)$",
     r"^(?:please\s+)?remind\s+me\s+(?:to\s+)?(.+)$",
@@ -24,6 +29,37 @@ TIME_PATTERN = (
     r"\b(?:às|as|at)\s+(\d{1,2})(?:\s*h\s*(\d{2})?|:(\d{2}))?"
     r"(?:\s*(am|pm))?\b(?:\s*horas?)?"
 )
+
+
+NUMBER_WORDS = {"um": 1, "uma": 1, "dois": 2, "duas": 2, "meia": 0.5}
+
+DURATION_PATTERN = (
+    r"\b(?:daqui\s+a|em|in|de|for)?\s*(\d+|um|uma|dois|duas)\s*"
+    r"(minutos?|mins?|horas?|hs?|minutes?|hours?)\b"
+)
+
+
+def _find_duration(text):
+    """Devolve (minutos, trecho) para 'em 20 minutos', '2 horas'..."""
+    match = re.search(r"\bem\s+meia\s+hora\b", text, re.IGNORECASE)
+
+    if match:
+        return 30, match
+
+    match = re.search(DURATION_PATTERN, text, re.IGNORECASE)
+
+    if not match:
+        return None, None
+
+    amount = match.group(1).lower()
+    amount = int(amount) if amount.isdigit() else NUMBER_WORDS[amount]
+    unit = match.group(2).lower()
+    minutes = amount * (60 if unit.startswith("h") else 1)
+
+    if minutes <= 0 or minutes > 24 * 60:
+        return None, None
+
+    return int(minutes), match
 
 
 def _find_day(text, today):
@@ -77,7 +113,7 @@ def _find_time(text):
     return (hour, minute), match
 
 
-def parse_task_request(text, today):
+def parse_task_request(text, today, now=None):
     """
     Interpreta pedidos como 'me lembra de X amanhã às 10h'.
     Devolve {"title": ..., "due": ...} ou None se não for um pedido de tarefa.
@@ -86,8 +122,15 @@ def parse_task_request(text, today):
         return None
 
     remainder = None
+    is_timer = False
 
-    for pattern in REQUEST_PATTERNS:
+    timer_match = re.match(TIMER_PATTERN, text.strip(), re.IGNORECASE)
+
+    if timer_match:
+        remainder = timer_match.group(1).strip().rstrip(".!?")
+        is_timer = True
+
+    for pattern in () if is_timer else REQUEST_PATTERNS:
         match = re.match(pattern, text.strip(), re.IGNORECASE)
 
         if match:
@@ -95,6 +138,38 @@ def parse_task_request(text, today):
             break
 
     if not remainder:
+        return None
+
+    # "em 20 minutos" / "timer de 25 minutos": precisa saber que horas são.
+    if now is not None:
+        minutes, duration_match = _find_duration(remainder)
+
+        if minutes:
+            due_at = (now + timedelta(minutes=minutes)).replace(
+                second=0, microsecond=0
+            )
+            start, end = duration_match.span()
+            rest = (remainder[:start] + " " + remainder[end:])
+            title = re.sub(r"\s+", " ", rest).strip(" ,.;:-")
+            title = re.sub(
+                r"\s+(?:para|pra|na|no|em|de|às|as|a|on|at|for)$",
+                "",
+                title,
+                flags=re.IGNORECASE,
+            )
+
+            if not title:
+                title = "Timer"
+
+            title = title[0].upper() + title[1:]
+
+            return {
+                "title": title,
+                "due": due_at.isoformat(timespec="minutes"),
+                "minutes": minutes,
+            }
+
+    if is_timer:
         return None
 
     day, day_match = _find_day(remainder, today)

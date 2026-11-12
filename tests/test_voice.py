@@ -348,3 +348,17 @@ def test_non_latin_text_is_noise():
     assert is_noise_transcript("대시지 대시지")
     assert is_noise_transcript("ありがとう")
     assert not is_noise_transcript("olá, tudo bem? ¿cómo estás?")
+
+
+def test_transcriber_sends_vocabulary_prompt():
+    received = {}
+
+    class Model:
+        def transcribe(self, audio, **kwargs):
+            received.update(kwargs)
+            return iter([]), SimpleNamespace(language="pt", language_probability=0.9)
+
+    WhisperTranscriber(model=Model()).transcribe(speech_audio())
+
+    assert "AISSY" in received["initial_prompt"]
+    assert "UFU Racing" in received["initial_prompt"]

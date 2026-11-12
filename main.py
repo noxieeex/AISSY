@@ -2,6 +2,7 @@ import os
 import sys
 from datetime import datetime
 
+from aissy.apps import AppLauncher
 from aissy.briefing import build_briefing
 from aissy.commands import handle_command
 from aissy.conversation import Conversation, detect_language
@@ -10,6 +11,8 @@ from aissy.errors import ProviderUnavailableError
 from aissy.long_term_memory import LongTermMemory
 from aissy.persona import build_system_prompt
 from aissy.providers.ollama_provider import OllamaProvider
+from aissy.reminders import collect_due_reminders
+from aissy.safety import FileAuditLog, Policy, SafetyLayer, is_stop_phrase
 from aissy.tasks import TaskStore
 from aissy.voice import is_exit_phrase
 
@@ -20,6 +23,21 @@ SYSTEM_PROMPT = build_system_prompt(USER_NAME)
 
 long_term_memory = LongTermMemory(embedder=OllamaEmbedder())
 task_store = TaskStore()
+app_launcher = AppLauncher()
+
+# Safety Layer: todas as ações com efeito passam por ela. Se a verificação
+# inicial falhar, nenhuma ação é executada (fail closed).
+safety = SafetyLayer(
+    Policy(allowed_apps=app_launcher.names()),
+    FileAuditLog(),
+)
+
+if not safety.self_check():
+    print(
+        "\n[SEGURANÇA] A verificação da Safety Layer falhou. "
+        "Nenhuma ação (tarefas, abrir apps) será executada nesta sessão.\n"
+    )
+    safety = None
 voice = None
 listening_notice_shown = False
 
@@ -30,6 +48,8 @@ def new_conversation(fresh=False):
         new_conversation=fresh,
         long_term_memory=long_term_memory,
         task_store=task_store,
+        app_launcher=app_launcher,
+        safety=safety,
     )
 
 
@@ -113,6 +133,10 @@ emit(build_briefing(task_store, datetime.now(), USER_NAME))
 print("(Digite /ajuda para ver os comandos. Diga \"tchau\" para sair.)\n")
 
 while True:
+    # Avisa lembretes que venceram (a cada ciclo; no modo voz, a cada poucos segundos).
+    for reminder in collect_due_reminders(task_store, datetime.now(), USER_NAME):
+        emit(reminder)
+
     try:
         user_input = read_input()
     except (EOFError, KeyboardInterrupt):
@@ -128,6 +152,27 @@ while True:
         if command == "/new":
             aissy = new_conversation(fresh=True)
             emit("Nova conversa iniciada! <3")
+            continue
+
+        if command == "/parar" or is_stop_phrase(user_input):
+            if safety is not None:
+                safety.halt()
+
+            emit(
+                "Parada de emergência ativada. Não vou executar nenhuma ação "
+                "até você dizer /retomar."
+            )
+            continue
+
+        if command == "/retomar":
+            if safety is not None:
+                safety.resume()
+
+            emit("Ok, ações liberadas de novo.")
+            continue
+
+        if command == "/apps":
+            emit("Posso abrir: " + ", ".join(app_launcher.names()) + ".")
             continue
 
         if command == "/texto":
