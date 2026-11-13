@@ -10,7 +10,7 @@ from aissy.embeddings import OllamaEmbedder
 from aissy.errors import ProviderUnavailableError
 from aissy.long_term_memory import LongTermMemory
 from aissy.persona import build_system_prompt
-from aissy.providers.ollama_provider import OllamaProvider
+from aissy.providers.ollama_stream import OllamaStreamingProvider
 from aissy.reminders import collect_due_reminders
 from aissy.safety import FileAuditLog, Policy, SafetyLayer, is_stop_phrase
 from aissy.tasks import TaskStore
@@ -41,6 +41,9 @@ if not safety.self_check():
 voice = None
 listening_notice_shown = False
 
+# Voz neural (online, opcional): --voz-online ou AISSY_TTS=edge
+ONLINE_VOICE = "--voz-online" in sys.argv or os.environ.get("AISSY_TTS") == "edge"
+
 
 def new_conversation(fresh=False):
     return Conversation(
@@ -66,18 +69,47 @@ def emit(text):
             print(f"(não consegui falar em voz alta: {error})\n")
 
 
+def reply_with_stream(user_input):
+    """Mostra (e fala) a resposta frase a frase, enquanto ela é gerada."""
+    state = {"started": False, "muted": False}
+
+    def on_sentence(sentence):
+        print("\nAISSY: " if not state["started"] else " ", end="", flush=True)
+        state["started"] = True
+        print(sentence, end="", flush=True)
+
+        if voice is not None and not state["muted"]:
+            try:
+                voice.say(sentence, aissy.last_language)
+            except KeyboardInterrupt:
+                state["muted"] = True
+                print(" (fala interrompida)", end="", flush=True)
+            except Exception as error:
+                state["muted"] = True
+                print(f" (não consegui falar em voz alta: {error})", end="", flush=True)
+
+    text = aissy.send_message(user_input, llm, on_sentence=on_sentence)
+
+    if aissy.streamed:
+        if state["started"]:
+            print("\n")
+    else:
+        emit(text)
+
+
 def turn_voice_on(announce=True):
     global voice
 
     try:
         from aissy.voice import create_voice_session
 
-        voice = create_voice_session()
+        voice = create_voice_session(online=ONLINE_VOICE)
     except ImportError:
         voice = None
         print(
             "\nAISSY: Faltam as bibliotecas de voz, então vou ficar no texto. "
-            "Para usar voz, rode: pip install -r requirements-voice.txt\n"
+            "Para usar voz, rode: pip install -r requirements-voice.txt "
+            "(e requirements-voice-online.txt para a voz neural)\n"
         )
         return
 
@@ -121,7 +153,7 @@ def turn_voice_off():
 
 aissy = new_conversation()
 MODEL = os.environ.get("AISSY_MODEL", "qwen2.5:7b-instruct")
-llm = OllamaProvider(MODEL)
+llm = OllamaStreamingProvider(MODEL)
 
 print(f"\n(Modelo: {MODEL})")
 
@@ -203,7 +235,7 @@ while True:
             continue
 
         try:
-            emit(aissy.send_message(user_input, llm))
+            reply_with_stream(user_input)
 
         except ProviderUnavailableError as error:
             emit(

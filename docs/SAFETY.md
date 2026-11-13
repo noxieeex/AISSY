@@ -30,6 +30,9 @@ Qualquer recurso futuro que envolva atalhos globais, captura de tela, overlay ou
 - Ainda **não há** confirmação genérica (a confirmação de memória continua separada), permissões por pasta, backups, sandbox nem limites de recursos para ações.
 - Comandos diretos da usuária (`/feito`, `/apagar`) e a gravação de memória ainda não passam pela camada.
 
+- A voz neural opcional (`--voz-online`) é a única parte que usa rede: envia só o texto das respostas para gerar áudio. Não executa nada e não lê nada do sistema.
+- A AISSY continua restrita ao terminal/VS Code: nenhum acesso ao desktop, a janelas ou a outros processos.
+
 ## Decisões tomadas
 
 - `steam` não está na lista padrão de apps (pode ser adicionado em `data/apps.json`).

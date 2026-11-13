@@ -362,3 +362,116 @@ def test_transcriber_sends_vocabulary_prompt():
 
     assert "AISSY" in received["initial_prompt"]
     assert "UFU Racing" in received["initial_prompt"]
+
+
+# ---------- voz neural (opcional) ----------
+
+from aissy.voice import EdgeTTSSpeaker, FallbackSpeaker, pick_edge_voice
+
+EDGE_VOICES = [
+    {"ShortName": "pt-BR-AntonioNeural", "Gender": "Male", "Locale": "pt-BR"},
+    {"ShortName": "pt-BR-ThalitaNeural", "Gender": "Female", "Locale": "pt-BR"},
+    {"ShortName": "pt-BR-FranciscaNeural", "Gender": "Female", "Locale": "pt-BR"},
+    {"ShortName": "pt-PT-RaquelNeural", "Gender": "Female", "Locale": "pt-PT"},
+    {"ShortName": "en-US-GuyNeural", "Gender": "Male", "Locale": "en-US"},
+    {"ShortName": "en-US-AriaNeural", "Gender": "Female", "Locale": "en-US"},
+    {"ShortName": "es-ES-ElviraNeural", "Gender": "Female", "Locale": "es-ES"},
+]
+
+
+@pytest.mark.parametrize(
+    "language, expected",
+    [
+        ("pt-BR", "pt-BR-FranciscaNeural"),
+        ("en", "en-US-AriaNeural"),
+        ("es", "es-ES-ElviraNeural"),
+    ],
+)
+def test_pick_edge_voice_prefers_known_female_voices(language, expected):
+    assert pick_edge_voice(EDGE_VOICES, language) == expected
+
+
+def test_pick_edge_voice_never_returns_male_or_other_locale():
+    male_only = [EDGE_VOICES[0], EDGE_VOICES[3]]
+
+    assert pick_edge_voice(male_only, "pt-BR") is None
+
+
+def test_pick_edge_voice_falls_back_to_any_female_in_locale():
+    voices = [{"ShortName": "pt-BR-OutraNeural", "Gender": "Female", "Locale": "pt-BR"}]
+
+    assert pick_edge_voice(voices, "pt-BR") == "pt-BR-OutraNeural"
+
+
+def test_pick_edge_voice_unknown_language():
+    assert pick_edge_voice(EDGE_VOICES, "ja") is None
+
+
+def test_edge_speaker_synthesizes_and_plays_cleaned_text():
+    calls = {}
+
+    speaker = EdgeTTSSpeaker(
+        synthesize=lambda text, voice: calls.update(text=text, voice=voice) or b"mp3",
+        play=lambda audio: calls.update(audio=audio),
+        list_voices=lambda: EDGE_VOICES,
+    )
+
+    speaker.speak("Oi, Ge! 💗", "pt-BR")
+
+    assert calls == {"text": "Oi, Ge!", "voice": "pt-BR-FranciscaNeural", "audio": b"mp3"}
+
+
+def test_edge_speaker_lists_voices_only_once():
+    count = {"n": 0}
+
+    def list_voices():
+        count["n"] += 1
+        return EDGE_VOICES
+
+    speaker = EdgeTTSSpeaker(
+        synthesize=lambda t, v: b"x", play=lambda a: None, list_voices=list_voices
+    )
+    speaker.speak("um", "pt-BR")
+    speaker.speak("dois", "pt-BR")
+
+    assert count["n"] == 1
+
+
+def test_edge_speaker_ignores_empty_text():
+    speaker = EdgeTTSSpeaker(
+        synthesize=lambda t, v: pytest.fail("não deveria sintetizar"),
+        play=lambda a: None,
+        list_voices=lambda: EDGE_VOICES,
+    )
+
+    speaker.speak("💗")
+
+
+def test_fallback_speaker_uses_local_voice_when_online_fails(capsys):
+    spoken = []
+
+    class Broken:
+        def speak(self, text, language):
+            raise ConnectionError("sem internet")
+
+    class Local:
+        def speak(self, text, language):
+            spoken.append(text)
+
+    speaker = FallbackSpeaker(Broken(), Local())
+    speaker.speak("oi", "pt-BR")
+    speaker.speak("tchau", "pt-BR")
+
+    assert spoken == ["oi", "tchau"]
+    assert capsys.readouterr().out.count("voz online indisponível") == 1
+
+
+def test_fallback_speaker_does_not_swallow_ctrl_c():
+    class Interrupted:
+        def speak(self, text, language):
+            raise KeyboardInterrupt
+
+    speaker = FallbackSpeaker(Interrupted(), object())
+
+    with pytest.raises(KeyboardInterrupt):
+        speaker.speak("oi", "pt-BR")

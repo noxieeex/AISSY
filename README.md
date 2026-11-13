@@ -18,6 +18,8 @@ Assistente pessoal em Python, feita para rodar **localmente** (via Ollama), com 
 - Pedidos como "me lembra de X amanhã às 10h" são interpretados em código (data, hora e título), sem depender do modelo.
 - Erros de ferramentas voltam ao modelo como resultado, em vez de derrubar a conversa. A data e a hora atuais entram no contexto de cada resposta.
 - **Safety Layer** (fase 1): toda ação com efeito (tarefas, abrir apps) passa por uma camada independente do modelo, com allowlist, blocklist permanente, alvos protegidos (Riot/Vanguard), origem da ação, log de auditoria, parada de emergência (`/parar`) e política de bloquear na dúvida. Detalhes em [`docs/SAFETY.md`](docs/SAFETY.md).
+- Respostas em streaming: a AISSY mostra e fala a resposta frase a frase enquanto o modelo ainda gera, em vez de esperar o texto inteiro. A trava contra "anotei" falso é aplicada frase a frase, e atalhos em código (tarefas, abrir app, memória, data) nunca são transmitidos. Lógica testada com peças falsas; falta medir o ganho no uso real.
+- Classificador de idioma **treinado** (`aissy/language_model.py`, Naive Bayes sobre n-gramas de caracteres, Python puro, modelo em JSON legível). Treino e avaliação com `python -m evaluation.train_language`: no conjunto de teste acertou 97% contra 72% da heurística antiga; num conjunto extra de 45 frases curtas, escritas à parte, 93% contra 60%. Os exemplos foram escritos à mão (270 frases): é um conjunto pequeno, então os números indicam o ganho, não uma garantia. Frases de uma palavra ("ok") continuam ambíguas. Os pedidos que executam ações (lembretes, abrir apps) continuam decididos por regras em código, de propósito: um erro de classificação não pode disparar uma ação.
 - Mensagem amigável quando o Ollama está fora do ar.
 - Modo voz opcional e 100% local: reconhecimento de fala com `faster-whisper` e fala com as vozes do Windows (`pyttsx3`), preferindo vozes femininas. Enter começa a gravação e Enter encerra. A lógica é testada com peças falsas; o áudio em si depende de microfone e das vozes instaladas, e foi validado manualmente.
 - Persona definida em `aissy/persona.py` e conferida por um script (`evaluation/persona_check.py`) que roda 11 frases no modelo e verifica idioma, frases de chatbot genérico, forma feminina, tamanho da resposta e emojis. Com `qwen2.5:7b-instruct` o resultado foi 9/11, e varia entre execuções.
@@ -26,13 +28,14 @@ Assistente pessoal em Python, feita para rodar **localmente** (via Ollama), com 
 
 ### Em desenvolvimento
 
+- Voz neural opcional (`--voz-online` ou `AISSY_TTS=edge`, via `edge-tts`): bem mais natural que a voz do Windows, com a voz local como reserva se faltar internet. **Privacidade:** o texto das respostas da AISSY é enviado ao serviço online da Microsoft para gerar o áudio; por padrão tudo continua local. A escolha da voz e o fallback são testados; a qualidade do áudio falta validar no uso real.
 - Ajuste fino da persona: o modelo de 7B ainda escorrega para frases genéricas e erros de gramática.
 - Avisos de lembrete no horário (a AISSY fala ou escreve o lembrete quando vence). A lógica é testada com peças falsas; falta validar no uso real.
 - Abrir aplicativos por comando de voz ou texto, só de uma lista de apps permitidos (`aissy/apps.py`, extensível em `data/apps.json`). A lógica é testada com peças falsas; falta validar no Windows.
 
 ### Ideias (não implementadas)
 
-- Voz mais natural (a atual, do Windows, soa robótica), palavra de ativação e execução em segundo plano.
+- Voz natural 100% local (sem enviar texto para fora), palavra de ativação e execução em segundo plano.
 - Interface gráfica.
 - Integração com calendário.
 - Pesquisa na web.
@@ -97,6 +100,15 @@ pip install -r requirements-voice.txt
 python main.py --voz
 ```
 
+Voz neural opcional (envia o texto das respostas à Microsoft; a local continua como reserva):
+
+```powershell
+pip install -r requirements-voice-online.txt
+python main.py --voz --voz-online
+```
+
+A AISSY roda só dentro do terminal/VS Code e não tem acesso ao desktop nem ao sistema.
+
 Para testar outro modelo do Ollama: `$env:AISSY_MODEL = "nome-do-modelo"`. O modelo precisa aceitar ferramentas (tool calling).
 
 Os dados locais (conversas e memórias) ficam em `data/`, que não é versionada. Chaves de API, se usadas, ficam em um arquivo `.env`, também fora do Git.
@@ -125,7 +137,7 @@ O conjunto de avaliação é pequeno e feito à mão, então os números servem 
 
 ## Limitações conhecidas
 
-- A detecção de idioma é uma heurística (português do Brasil, inglês e espanhol). Mensagens fixas do sistema, como confirmações, existem só em português e inglês.
+- A detecção de idioma usa um classificador treinado com poucos exemplos, com as regras antigas como reserva (português do Brasil, inglês e espanhol). Mensagens fixas do sistema, como confirmações, existem só em português e inglês.
 - A Safety Layer roda no mesmo processo do restante da AISSY: protege contra erros do modelo e prompt injection, não contra código malicioso com os mesmos privilégios. Confirmação genérica, permissões por pasta, backups e sandbox ainda não existem.
 - Os avisos de lembrete só acontecem com a AISSY aberta; no modo texto, só aparecem depois que você aperta Enter.
 - Abrir aplicativos só funciona no Windows e apenas para apps da lista permitida.
@@ -133,7 +145,7 @@ O conjunto de avaliação é pequeno e feito à mão, então os números servem 
 - É um projeto de uso pessoal, para um único usuário e sem autenticação.
 - Modelos locais de 7B erram às vezes, inclusive ao decidir quando chamar uma ferramenta. Por isso pedidos claros de lembrete são interpretados por regras em código, e uma trava substitui respostas que dizem "anotei" sem que nada tenha sido salvo.
 - O modelo precisa suportar tool calling no Ollama. O `gemma3:12b`, por exemplo, retornou erro 400 nos testes e não funcionou.
-- A voz do Windows é robótica e só há uma voz feminina em português instalada por padrão.
+- A voz padrão do Windows é robótica (a neural é opcional e usa internet) e só há uma voz feminina em português instalada por padrão.
 - O reconhecimento de fala (`faster-whisper` small) às vezes erra palavras.
 
 ## Licença

@@ -2,10 +2,12 @@ import json
 import re
 from datetime import datetime
 
+from aissy.language_model import load_model
 from aissy.llm import generate_response, generate_response_with_tools
 from aissy.memory import Memory
 from aissy.long_term_memory import LongTermMemory
 from aissy.safety import ActionBlocked, Action, Origin, guard
+from aissy.streaming import SentenceSplitter
 from aissy.task_parser import parse_task_request
 from aissy.tools import (
     TOOL_DEFINITIONS,
@@ -17,8 +19,8 @@ from aissy.tools import (
 )
 
 
-def detect_language(content):
-    """Detecta português brasileiro, inglês ou espanhol (heurística)."""
+def heuristic_language(content):
+    """Detecta português brasileiro, inglês ou espanhol por regras (heurística)."""
 
     text = content.lower().strip()
 
@@ -89,6 +91,41 @@ def detect_language(content):
     return "pt-BR"
 
 
+LANGUAGE_MODEL = load_model()
+LANGUAGE_CONFIDENCE = 0.75
+
+
+def detect_language(content):
+    """
+    Idioma da mensagem: usa o classificador treinado quando ele tem confiança
+    suficiente; caso contrário (frases muito curtas, ambíguas), cai nas regras.
+    """
+    if LANGUAGE_MODEL is not None and content.strip():
+        label, confidence = LANGUAGE_MODEL.predict(content)
+
+        if confidence >= LANGUAGE_CONFIDENCE:
+            return label
+
+    return heuristic_language(content)
+
+
+class _StreamAdapter:
+    """Faz o provedor com streaming caber na mesma validação de respostas."""
+
+    def __init__(self, llm, on_token):
+        self.llm = llm
+        self.on_token = on_token
+
+    def generate_with_tools(self, messages, tools):
+        return self.llm.generate_with_tools_stream(
+            messages, tools, self.on_token
+        )
+
+
+def _normalize_spaces(text):
+    return re.sub(r"\s+", " ", text).strip()
+
+
 class Conversation:
     def __init__(
         self,
@@ -103,6 +140,8 @@ class Conversation:
         self.task_store = task_store
         self.app_launcher = app_launcher
         self.safety = safety
+        self.streamed = False
+        self.last_language = "pt-BR"
         self.now_fn = now_fn or datetime.now
         self.memory = Memory(new_conversation=new_conversation)
 
@@ -725,7 +764,7 @@ class Conversation:
             f"{weekday_pt}, {date_result['date']}."
         )
 
-    def send_message(self, content, llm):
+    def send_message(self, content, llm, on_sentence=None):
         if not isinstance(content, str):
             raise TypeError("Message content must be a string.")
 
@@ -733,6 +772,8 @@ class Conversation:
             raise ValueError("Message content cannot be empty.")
 
         language = detect_language(content)
+        self.last_language = language
+        self.streamed = False
 
         # Primeiro, resolve confirmações ou cancelamentos pendentes.
         confirmation_response = self._handle_memory_confirmation(
@@ -792,7 +833,11 @@ class Conversation:
             relevant_memories,
         )
 
-        if not hasattr(llm, "generate_with_tools"):
+        supports_tools = hasattr(llm, "generate_with_tools") or hasattr(
+            llm, "generate_with_tools_stream"
+        )
+
+        if not supports_tools:
             response = generate_response(prepared_messages, llm)
             messages.append(response)
             self.messages = messages
@@ -802,12 +847,48 @@ class Conversation:
         max_tool_rounds = 5
         task_tool_called = False
 
+        streaming = on_sentence is not None and hasattr(
+            llm, "generate_with_tools_stream"
+        )
+        delivered = []
+        suppressed = False
+        splitter = SentenceSplitter()
+
+        def deliver(sentence):
+            """Entrega uma frase ao chamador, a não ser que seja uma
+            confirmação falsa de tarefa (a trava abaixo cuida dela)."""
+            nonlocal suppressed
+
+            if suppressed:
+                return
+
+            if (
+                self.task_store is not None
+                and not task_tool_called
+                and self._claims_saved_task(" ".join(delivered + [sentence]))
+            ):
+                suppressed = True
+                return
+
+            delivered.append(sentence)
+            on_sentence(sentence)
+
+        def on_token(text):
+            for sentence in splitter.feed(text):
+                deliver(sentence)
+
+        llm_for_calls = _StreamAdapter(llm, on_token) if streaming else llm
+
         for round_number in range(max_tool_rounds + 1):
             response = generate_response_with_tools(
                 prepared_messages,
-                llm,
+                llm_for_calls,
                 TOOL_DEFINITIONS,
             )
+
+            if streaming:
+                for sentence in splitter.flush():
+                    deliver(sentence)
 
             if (
                 not response["tool_calls"]
@@ -840,6 +921,21 @@ class Conversation:
             if not response["tool_calls"]:
                 self.messages = messages
                 self.memory.save(self.messages)
+
+                if streaming:
+                    self.streamed = True
+                    spoken = _normalize_spaces(" ".join(delivered))
+                    final = _normalize_spaces(response["content"] or "")
+
+                    # Entrega o que ainda não saiu (ou a resposta corrigida).
+                    if final.startswith(spoken):
+                        remainder = final[len(spoken):].strip()
+                    else:
+                        remainder = final
+
+                    if remainder:
+                        on_sentence(remainder)
+
                 return response["content"]
 
             if round_number == max_tool_rounds:

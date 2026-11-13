@@ -329,6 +329,137 @@ class Pyttsx3Speaker:
         engine.runAndWait()
 
 
+EDGE_PREFERRED_FEMALE = {
+    "pt": ("Francisca", "Thalita"),
+    "en": ("Aria", "Jenny"),
+    "es": ("Elvira", "Dalia"),
+}
+
+EDGE_LOCALE_PREFIX = {"pt": "pt-BR", "en": "en-US", "es": "es-"}
+
+
+def pick_edge_voice(voices, language):
+    """
+    Escolhe uma voz neural feminina do idioma, entre as que o serviço lista
+    (dicionários com ShortName, Gender e Locale). None se não houver.
+    """
+    code = LANGUAGE_CODES.get(language, language)
+    prefix = EDGE_LOCALE_PREFIX.get(code)
+
+    if prefix is None:
+        return None
+
+    female = [
+        voice for voice in voices
+        if voice.get("Gender") == "Female"
+        and str(voice.get("Locale", "")).startswith(prefix)
+    ]
+
+    for name in EDGE_PREFERRED_FEMALE.get(code, ()):
+        for voice in female:
+            if name in voice.get("ShortName", ""):
+                return voice["ShortName"]
+
+    return female[0]["ShortName"] if female else None
+
+
+def _edge_list_voices():
+    import asyncio
+
+    import edge_tts
+
+    return asyncio.run(edge_tts.list_voices())
+
+
+def _edge_synthesize(text, voice):
+    """Texto -> bytes de áudio mp3, pelo serviço online do Edge."""
+    import asyncio
+
+    import edge_tts
+
+    async def run():
+        audio = b""
+
+        async for chunk in edge_tts.Communicate(text, voice).stream():
+            if chunk["type"] == "audio":
+                audio += chunk["data"]
+
+        return audio
+
+    return asyncio.run(run())
+
+
+def _play_mp3(audio):
+    import miniaudio
+    import numpy as np
+    import sounddevice as sd
+
+    decoded = miniaudio.decode(
+        audio,
+        output_format=miniaudio.SampleFormat.SIGNED16,
+        nchannels=1,
+    )
+    samples = np.frombuffer(decoded.samples, dtype="int16")
+
+    try:
+        sd.play(samples, decoded.sample_rate)
+        sd.wait()
+    except KeyboardInterrupt:
+        sd.stop()
+        raise
+
+
+class EdgeTTSSpeaker:
+    """
+    Voz neural, bem mais natural. ATENÇÃO: o texto das respostas é enviado
+    ao serviço online da Microsoft para gerar o áudio (é opcional).
+    """
+
+    def __init__(self, synthesize=None, play=None, list_voices=None):
+        self.synthesize = synthesize or _edge_synthesize
+        self.play = play or _play_mp3
+        self.list_voices = list_voices or _edge_list_voices
+        self._voices = None
+
+    def _voice_for(self, language):
+        if self._voices is None:
+            self._voices = self.list_voices()
+
+        return pick_edge_voice(self._voices, language)
+
+    def speak(self, text, language="pt-BR"):
+        text = clean_for_speech(text)
+
+        if not text:
+            return
+
+        voice = self._voice_for(language)
+
+        if voice is None:
+            raise RuntimeError(f"No neural voice found for {language}.")
+
+        self.play(self.synthesize(text, voice))
+
+
+class FallbackSpeaker:
+    """Tenta a voz principal; se falhar (sem internet, por exemplo), usa a local."""
+
+    def __init__(self, primary, fallback):
+        self.primary = primary
+        self.fallback = fallback
+        self.warned = False
+
+    def speak(self, text, language="pt-BR"):
+        try:
+            self.primary.speak(text, language)
+        except Exception as error:
+            if not self.warned:
+                print(f"  (voz online indisponível, usando a local: {error})")
+                self.warned = True
+
+            self.fallback.speak(text, language)
+
+
 class VoiceSession:
     def __init__(self, recorder, transcriber, speaker):
         self.recorder = recorder
@@ -346,18 +477,28 @@ class VoiceSession:
         self.speaker.speak(text, language)
 
 
-def create_voice_session():
+def create_voice_session(online=False):
     """
     Monta a sessão de voz real. Levanta ImportError se as dependências
     opcionais (requirements-voice.txt) não estiverem instaladas.
+    online=True usa vozes neurais (requirements-voice-online.txt), com a
+    voz local como reserva.
     """
     import faster_whisper  # noqa: F401
     import numpy  # noqa: F401
     import pyttsx3  # noqa: F401
     import sounddevice  # noqa: F401
 
+    speaker = Pyttsx3Speaker()
+
+    if online:
+        import edge_tts  # noqa: F401
+        import miniaudio  # noqa: F401
+
+        speaker = FallbackSpeaker(EdgeTTSSpeaker(), speaker)
+
     return VoiceSession(
         SoundDeviceRecorder(),
         WhisperTranscriber(),
-        Pyttsx3Speaker(),
+        speaker,
     )
