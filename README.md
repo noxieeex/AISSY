@@ -1,8 +1,18 @@
-# AISSY
+# AISSY 💗
 
-Assistente pessoal em Python, feita para rodar **localmente** (via Ollama), com conversa por texto ou voz, em português, inglês e espanhol, memória de longo prazo e uso de ferramentas (tool calling). É um projeto pessoal, em desenvolvimento contínuo.
+> uma assistente pessoal que mora no meu terminal: conversa, lembra das coisas e faz (com cuidado) o que eu peço ♡
 
-> Este README separa o que **existe e está testado**, o que está **em desenvolvimento** e o que é **apenas ideia**.
+AISSY (*Living Engine*) é o meu projeto de longo prazo: uma assistente em Python que roda um modelo de linguagem **local** (via Ollama), conversa por **voz ou texto** em português, inglês e espanhol, tem **memória** e usa **ferramentas** (tool calling). Eu queria algo no estilo Jarvis, que dá bom dia, responde como gente e ajuda com o dia a dia, os projetos e os jogos. Mas começando devagar e com segurança.
+
+## Em um minuto
+
+- 🗣️ **Fala e escuta.** Conversa por voz (com uma voz neural opcional, bem mais natural) ou por texto, e responde frase a frase enquanto pensa.
+- 🧠 **Lembra.** Memória de longo prazo com busca por palavras e por significado. O que é privado nunca chega ao modelo.
+- ✅ **Organiza.** Tarefas e lembretes, com resumo do dia ao abrir.
+- 🛡️ **Tem limites.** Tudo o que ela *faz* passa por uma camada de segurança independente do modelo: lista do que pode, lista do que nunca pode, registro de tudo e botão de parada. Ela vive só no terminal: **não vê a tela, não mexe em outros programas e não toca em jogos nem em anti-cheat**.
+- 📏 **Medida, não só "parece que funciona".** Treinei um classificador de idioma (97% de acerto contra 72% da regra antiga), comparei métodos de busca de memória e escrevi mais de 340 testes automatizados.
+
+> Este README separa o que **existe e está testado**, o que está **em desenvolvimento** e o que é **apenas ideia**. Prefiro dizer o que ainda não funciona a prometer o que não existe.
 
 ## Estado atual
 
@@ -151,3 +161,5 @@ O conjunto de avaliação é pequeno e feito à mão, então os números servem 
 ## Licença
 
 Copyright (c) 2026 Geovana Ribeiro Borges. Todos os direitos reservados. O código está público para leitura e avaliação; para reutilizá-lo, entre em contato.
+
+feito uma decisão questionável de cada vez ♡
