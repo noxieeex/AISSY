@@ -1,3 +1,6 @@
+# AISSY - Copyright (c) 2026 Geovana Ribeiro Borges (noxieeex).
+# Todos os direitos reservados.
+
 """
 Treina e avalia o classificador de idioma.
 

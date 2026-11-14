@@ -1,3 +1,6 @@
+# AISSY - Copyright (c) 2026 Geovana Ribeiro Borges (noxieeex).
+# Todos os direitos reservados.
+
 MEMORIES = [
     {"key": "curso", "content": "User studies Computer Engineering at UFU.", "category": "studies"},
     {"key": "linguagens", "content": "Sabe programar em Python, C e JavaScript.", "category": "skills"},

@@ -1,3 +1,6 @@
+# AISSY - Copyright (c) 2026 Geovana Ribeiro Borges (noxieeex).
+# Todos os direitos reservados.
+
 import sqlite3
 from datetime import date, datetime, timedelta
 from pathlib import Path

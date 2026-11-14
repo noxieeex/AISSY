@@ -150,4 +150,4 @@ O conjunto de avaliação é pequeno e feito à mão, então os números servem 
 
 ## Licença
 
-Ainda não definida.
+Copyright (c) 2026 Geovana Ribeiro Borges. Todos os direitos reservados. O código está público para leitura e avaliação; para reutilizá-lo, entre em contato.

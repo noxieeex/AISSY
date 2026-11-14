@@ -1,3 +1,6 @@
+# AISSY - Copyright (c) 2026 Geovana Ribeiro Borges (noxieeex).
+# Todos os direitos reservados.
+
 
 def generate_response(messages, llm):
     if not isinstance(messages, list):

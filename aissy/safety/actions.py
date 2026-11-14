@@ -1,3 +1,6 @@
+# AISSY - Copyright (c) 2026 Geovana Ribeiro Borges (noxieeex).
+# Todos os direitos reservados.
+
 from dataclasses import dataclass, field
 from enum import Enum
 

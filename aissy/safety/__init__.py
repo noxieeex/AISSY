@@ -1,3 +1,6 @@
+# AISSY - Copyright (c) 2026 Geovana Ribeiro Borges (noxieeex).
+# Todos os direitos reservados.
+
 from aissy.safety.actions import Action, Decision, Origin, Verdict
 from aissy.safety.audit import AuditError, FileAuditLog, MemoryAuditLog
 from aissy.safety.layer import (

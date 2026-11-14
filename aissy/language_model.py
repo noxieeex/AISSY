@@ -1,3 +1,6 @@
+# AISSY - Copyright (c) 2026 Geovana Ribeiro Borges (noxieeex).
+# Todos os direitos reservados.
+
 """
 Classificador de idioma treinado (Naive Bayes sobre n-gramas de caracteres).
 

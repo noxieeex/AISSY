@@ -1,3 +1,6 @@
+# AISSY - Copyright (c) 2026 Geovana Ribeiro Borges (noxieeex).
+# Todos os direitos reservados.
+
 def collect_due_reminders(task_store, now, name=None):
     """
     Devolve as frases dos lembretes que venceram agora e marca cada um como
