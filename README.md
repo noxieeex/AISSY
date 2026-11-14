@@ -2,7 +2,7 @@
 
 > uma assistente pessoal que mora no meu terminal: conversa, lembra das coisas e faz (com cuidado) o que eu peço ♡
 
-AISSY (*Living Engine*) é o meu projeto de longo prazo: uma assistente em Python que roda um modelo de linguagem **local** (via Ollama), conversa por **voz ou texto** em português, inglês e espanhol, tem **memória** e usa **ferramentas** (tool calling). Eu queria algo no estilo Jarvis, que dá bom dia, responde como gente e ajuda com o dia a dia, os projetos e os jogos. Mas começando devagar e com segurança.
+AISSY (*Living Engine*) é o meu projeto de longo prazo: uma assistente em Python que roda um modelo de linguagem **local** (via Ollama), conversa por **voz ou texto** em português, inglês e espanhol, tem **memória** e usa **ferramentas** (tool calling). É o meu projeto de longo prazo, e eu aprendo mexendo nele ♡
 
 ## Em um minuto
 
